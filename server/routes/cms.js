@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const store = require('../db/store');
 const { IS_VERCEL } = require('../config');
+const { mapTmdbGenreIds, resolveRegionAndCountry } = require('../utils/tmdbGenreMap');
 const {
   isSafeExternalUrl,
   requireAdminAuth,
@@ -16,10 +17,10 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p';
 
 function getTmdbKey() {
-  return (store.getSettings().tmdbApiKey || '').trim();
+  return (store.getSettings().tmdbApiKey || process.env.TMDB_API_KEY || '').trim();
 }
 
-async function tmdbFetch(endpoint, params = {}) {
+async function tmdbFetch(endpoint, params = {}, timeoutMs = 8000) {
   const key = getTmdbKey();
   if (!key) throw new Error('TMDB API key is not configured.');
   const isBearer = key.length > 50 || key.startsWith('eyJ');
@@ -31,9 +32,15 @@ async function tmdbFetch(endpoint, params = {}) {
 
   const headers = { Accept: 'application/json' };
   if (isBearer) headers.Authorization = `Bearer ${key}`;
-  const res = await fetch(url.toString(), { headers });
-  if (!res.ok) throw new Error(`TMDB error (${res.status})`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url.toString(), { headers, signal: controller.signal });
+    if (!res.ok) throw new Error(`TMDB error (${res.status})`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -177,8 +184,8 @@ function ensureInitialCmsSeed() {
       quality: '4K',
       badge: '4K',
       runtime: '12m',
-      poster: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tears_of_Steel_poster.jpg/600px-Tears_of_Steel_poster.jpg',
-      backdrop: 'https://mango.blender.org/wp-content/uploads/2012/09/01_thom_celia_bridge.jpg',
+      poster: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&q=80',
+      backdrop: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1400&q=80',
       previewVideoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
       trailerYoutubeId: 'R6MlUcmOul8',
       overview: 'In a ruined futuristic Amsterdam, soldiers and scientists make a desperate stand against an army of autonomous machines.',
@@ -227,8 +234,8 @@ function ensureInitialCmsSeed() {
       quality: '4K',
       badge: '4K',
       runtime: '15m',
-      poster: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Sintel_poster.jpg/600px-Sintel_poster.jpg',
-      backdrop: 'https://durian.blender.org/wp-content/uploads/2010/06/sintel_trailer_1080p_0001.jpg',
+      poster: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=600&q=80',
+      backdrop: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1400&q=80',
       previewVideoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
       trailerYoutubeId: 'eRsGyueVLvQ',
       overview: 'A lonely warrior embarks on a perilous quest across frozen peaks and deserts to rescue a lost baby dragon.',
@@ -277,8 +284,8 @@ function ensureInitialCmsSeed() {
       quality: '4K',
       badge: 'HD',
       runtime: '10m',
-      poster: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Big_buck_bunny_poster_big.jpg/600px-Big_buck_bunny_poster_big.jpg',
-      backdrop: 'https://peach.blender.org/wp-content/uploads/title_anouncement.jpg',
+      poster: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&q=80',
+      backdrop: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1400&q=80',
       previewVideoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
       trailerYoutubeId: 'YE7VzlLtp-4',
       overview: 'A gentle woodland giant orchestrates hilarious forest payback when three mischievous rodents cross the line.',
@@ -440,12 +447,176 @@ function ensureInitialCmsSeed() {
   initialPublished.reverse().forEach((item) => store.upsertCmsTitle(item));
 }
 
-ensureInitialCmsSeed();
+const BOOTSTRAP_FEEDS = [
+  { endpoint: '/trending/movie/week', mediaType: 'movie', params: {} },
+  { endpoint: '/trending/tv/week', mediaType: 'tv', params: {} },
+  { endpoint: '/movie/now_playing', mediaType: 'movie', params: {} },
+  { endpoint: '/movie/popular', mediaType: 'movie', params: {} },
+  { endpoint: '/tv/popular', mediaType: 'tv', params: {} },
+  { endpoint: '/movie/top_rated', mediaType: 'movie', params: {} },
+  {
+    endpoint: '/discover/movie',
+    mediaType: 'movie',
+    params: { with_origin_country: 'NG', sort_by: 'popularity.desc' },
+    forcedOrigin: 'NG',
+  },
+  {
+    endpoint: '/discover/movie',
+    mediaType: 'movie',
+    params: { with_origin_country: 'IN', sort_by: 'popularity.desc' },
+    forcedOrigin: 'IN',
+  },
+  {
+    endpoint: '/discover/tv',
+    mediaType: 'tv',
+    params: { with_origin_country: 'KR', sort_by: 'popularity.desc' },
+    forcedOrigin: 'KR',
+  },
+  {
+    endpoint: '/discover/movie',
+    mediaType: 'movie',
+    params: { with_genres: '16', sort_by: 'popularity.desc' },
+    discoverGenre: '16',
+  },
+  {
+    endpoint: '/discover/tv',
+    mediaType: 'tv',
+    params: { with_genres: '16', with_origin_country: 'JP', sort_by: 'popularity.desc' },
+    forcedOrigin: 'JP',
+    discoverGenre: '16',
+  },
+];
+
+let bootstrapPromise = null;
+
+/**
+ * Cold-start TMDB catalog hydration (primarily for fresh containers / Vercel /tmp):
+ * pulls 11 diverse TMDB feeds + top Hero trailers in parallel when fewer than 25 TMDB items exist.
+ */
+async function ensureLiveTmdbBootstrap() {
+  if (!getTmdbKey()) return;
+  const existingTmdbCount = store.getCmsTitles().filter((t) => Boolean(t.tmdbId)).length;
+  if (existingTmdbCount >= 25) return;
+  if (bootstrapPromise) return bootstrapPromise;
+
+  bootstrapPromise = (async () => {
+    try {
+      const feedResults = await Promise.allSettled(
+        BOOTSTRAP_FEEDS.map((feed) => tmdbFetch(feed.endpoint, feed.params, 6000))
+      );
+
+      const seenKeys = new Set();
+      const created = [];
+      const baseMs = Date.now();
+
+      feedResults.forEach((res, feedIdx) => {
+        if (res.status !== 'fulfilled') return;
+        const feed = BOOTSTRAP_FEEDS[feedIdx];
+        const rows = Array.isArray(res.value?.results) ? res.value.results : [];
+
+        rows.forEach((raw) => {
+          if (!raw || !raw.id || !raw.poster_path) return;
+          const dedupeKey = `${feed.mediaType}:${raw.id}`;
+          if (seenKeys.has(dedupeKey)) return;
+          if (store.getCmsTitleByTmdb(feed.mediaType, raw.id)) return;
+          seenKeys.add(dedupeKey);
+
+          const lang = String(raw.original_language || 'en').toUpperCase();
+          const origin = String(
+            feed.forcedOrigin || (Array.isArray(raw.origin_country) && raw.origin_country[0]) || ''
+          ).toUpperCase();
+          const baseGenres = mapTmdbGenreIds(raw.genre_ids, feed.mediaType);
+          const genres =
+            feed.discoverGenre === '16' && !baseGenres.includes('Animation')
+              ? ['Animation', ...baseGenres].slice(0, 4)
+              : baseGenres;
+          const isAnim = genres.includes('Animation');
+          const { country, regionTag } = resolveRegionAndCountry(origin, lang, genres);
+          const release = raw.release_date || raw.first_air_date || '';
+          const ts = new Date(baseMs - created.length * 1000).toISOString();
+
+          created.push({
+            id: `cms_tmdb_${feed.mediaType}_${raw.id}`,
+            tmdbId: Number(raw.id),
+            _mediaType: feed.mediaType,
+            type: feed.mediaType === 'tv' ? 'series' : isAnim ? 'animation' : 'movie',
+            status: 'draft',
+            featured: Boolean(raw.backdrop_path && created.length < 8),
+            trending: true,
+            title: raw.title || raw.name || 'Untitled',
+            year: release ? Number(release.slice(0, 4)) : new Date().getFullYear(),
+            rating: raw.vote_average ? Number(raw.vote_average.toFixed(1)) : 7.2,
+            country,
+            regionTag,
+            language: 'Original Audio',
+            subtitlesAvailable: ['Original Audio'],
+            genres,
+            quality: '1080p',
+            badge: 'Request',
+            runtime: feed.mediaType === 'tv' ? 'TV Series' : 'Movie',
+            poster: `${IMG_BASE}/w500${raw.poster_path}`,
+            backdrop: raw.backdrop_path
+              ? `${IMG_BASE}/w1280${raw.backdrop_path}`
+              : `${IMG_BASE}/w500${raw.poster_path}`,
+            previewVideoUrl: '',
+            trailerYoutubeId: '',
+            overview: raw.overview || 'Live release metadata synced from TMDB.',
+            director: 'TMDB Catalog',
+            cast: [],
+            views: Math.max(12000, (Number(raw.vote_count) || 120) * 85),
+            downloads: 0,
+            sources: [],
+            requestCount: 0,
+            lastRequestedAt: null,
+            createdAt: ts,
+            updatedAt: ts,
+          });
+        });
+      });
+
+      // Hydrate YouTube trailer keys for the top 6 backdrop hero candidates so Hero autoplays immediately
+      const heroCandidates = created.filter((item) => item.backdrop !== item.poster).slice(0, 6);
+      await Promise.allSettled(
+        heroCandidates.map(async (item) => {
+          const vData = await tmdbFetch(
+            `/${item._mediaType}/${item.tmdbId}/videos`,
+            { include_video_language: 'en,null' },
+            4000
+          );
+          const yt = (vData.results || []).find(
+            (v) =>
+              v.site === 'YouTube' &&
+              v.key &&
+              (v.type === 'Trailer' || v.type === 'Teaser' || v.type === 'Clip')
+          );
+          if (yt) item.trailerYoutubeId = yt.key;
+        })
+      );
+
+      if (created.length > 0) {
+        const cleanRecords = created.map(({ _mediaType, ...rec }) => rec);
+        const currentList = store.getCmsTitles();
+        store.data.cmsTitles = [...currentList, ...cleanRecords];
+        store.save();
+        console.log(`[TMDB Bootstrap] Hydrated ${cleanRecords.length} live TMDB draft titles.`);
+      }
+    } catch (err) {
+      console.warn('[TMDB Bootstrap] Failed:', err.message);
+    } finally {
+      bootstrapPromise = null;
+    }
+  })();
+
+  return bootstrapPromise;
+}
 
 // ==================== PUBLIC ENDPOINTS ====================
 // GET /api/cms/public - Returns published playable titles first, followed by newly harvested Drafts so users can browse & request them
-router.get('/public', (req, res) => {
-  ensureInitialCmsSeed();
+router.get('/public', async (req, res) => {
+  await ensureLiveTmdbBootstrap();
+  if (store.getCmsTitles().length === 0) {
+    ensureInitialCmsSeed();
+  }
   const projected = store
     .getCmsTitles()
     .map(projectForPublic)
@@ -463,6 +634,34 @@ router.get('/public', (req, res) => {
   const publishedCount = projected.filter((m) => !m.isDraft).length;
   const draftCount = projected.filter((m) => m.isDraft).length;
   res.json({ total: projected.length, publishedCount, draftCount, items: projected });
+});
+
+// GET /api/cms/cron/harvest - Trigger bootstrap / auto-harvest on demand (optional CRON_SECRET bearer guard)
+router.get('/cron/harvest', async (req, res) => {
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  if (cronSecret) {
+    const auth = req.headers.authorization || '';
+    if (auth !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: 'Unauthorized cron trigger' });
+    }
+  }
+
+  try {
+    const tmdbBefore = store.getCmsTitles().filter((t) => Boolean(t.tmdbId)).length;
+    if (tmdbBefore < 25) {
+      await ensureLiveTmdbBootstrap();
+    } else if (getTmdbKey()) {
+      await runAutoHarvestTick();
+    }
+    const all = store.getCmsTitles();
+    res.json({
+      ok: true,
+      total: all.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Harvest cron failed' });
+  }
 });
 
 // POST /api/cms/request/:id - Public endpoint for users to request a movie/series that lacks a stream link yet
@@ -528,8 +727,11 @@ router.post('/request/:id', (req, res) => {
 
 // ==================== ADMIN ENDPOINTS ====================
 // GET /api/cms/admin/titles - Full Admin Inventory (Draft Queue + Published + Partial Series stats + Filters)
-router.get('/admin/titles', (req, res) => {
-  ensureInitialCmsSeed();
+router.get('/admin/titles', async (req, res) => {
+  await ensureLiveTmdbBootstrap();
+  if (store.getCmsTitles().length === 0) {
+    ensureInitialCmsSeed();
+  }
   const statusFilter = String(req.query.status || 'all').toLowerCase();
   const typeFilter = String(req.query.type || 'all').toLowerCase();
   const regionFilter = String(req.query.region || 'all').toLowerCase();
@@ -930,8 +1132,13 @@ function scheduleAutoHarvest() {
 scheduleAutoHarvest();
 
 // GET /api/cms/admin/requests - Dedicated User Requests Queue (Most Requested + Latest Requests)
-router.get('/admin/requests', (req, res) => {
-  ensureInitialCmsSeed();
+router.get('/admin/requests', async (req, res) => {
+  if (store.getCmsTitles().length === 0) {
+    await ensureLiveTmdbBootstrap();
+    if (store.getCmsTitles().length === 0) {
+      ensureInitialCmsSeed();
+    }
+  }
   const requested = store
     .getCmsTitles()
     .filter((t) => (Number(t.requestCount) || 0) > 0)

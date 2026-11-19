@@ -336,14 +336,30 @@ export const App: React.FC = () => {
   // Load TMDB + Admin CMS content (Published Releases + Newly Harvested Requestable Drafts)
   const reloadPublicCatalog = async () => {
     const allCms = await backendApi.fetchPublicPublishedCatalog();
+    let combined = [...allCms];
 
-    const readyCms = allCms.filter((m) => !m.isDraft && m.sources.length > 0);
-    const queuedDrafts = allCms.filter((m) => m.isDraft || m.sources.length === 0);
+    if (allCms.length < 15) {
+      const liveTmdb = await backendApi.fetchLiveTmdbCatalog();
+      if (liveTmdb.length > 0) {
+        const existingTmdbKeys = new Set(
+          allCms
+            .filter((m) => Boolean(m.tmdbId))
+            .map((m) => `${m.type === 'series' ? 'series' : 'movie'}_${m.tmdbId}`)
+        );
+        const extras = liveTmdb.filter(
+          (m) => !existingTmdbKeys.has(`${m.type === 'series' ? 'series' : 'movie'}_${m.tmdbId}`)
+        );
+        combined = [...allCms, ...extras];
+      }
+    }
+
+    const readyCms = combined.filter((m) => !m.isDraft && m.sources.length > 0);
+    const queuedDrafts = combined.filter((m) => m.isDraft || m.sources.length === 0);
     setPublishedCatalog(readyCms);
     setDraftedCatalog(queuedDrafts);
 
     const seen = new Set<string>();
-    const deduped = allCms.filter((m) => {
+    const deduped = combined.filter((m) => {
       if (seen.has(m.id)) return false;
       seen.add(m.id);
       return true;

@@ -24,6 +24,9 @@ interface TmdbApiItem {
   language?: string;
   originCountry?: string;
   discoverGenre?: string;
+  country?: string;
+  regionTag?: MediaItem['regionTag'];
+  genres?: string[];
 }
 
 export interface TmdbDetailResponse {
@@ -53,10 +56,13 @@ const trailerKeyCache = new Map<string, string>();
 export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
   const lang = (item.language || 'EN').toUpperCase();
   const origin = (item.originCountry || '').toUpperCase();
-  const isAnim = item.discoverGenre === '16';
+  const isAnim =
+    item.discoverGenre === '16' ||
+    Boolean(item.genres?.some((g) => /animat/i.test(g)));
 
   const country =
-    origin === 'NG'
+    item.country ||
+    (origin === 'NG'
       ? 'Nigeria'
       : origin === 'IN' || lang === 'HI'
       ? 'India'
@@ -68,10 +74,11 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
       ? 'France'
       : lang === 'ES'
       ? 'Spain'
-      : 'United States';
+      : 'United States');
 
-  const regionTag =
-    origin === 'NG'
+  const regionTag: MediaItem['regionTag'] =
+    item.regionTag ||
+    (origin === 'NG'
       ? 'Nollywood'
       : origin === 'IN' || lang === 'HI'
       ? 'Bollywood'
@@ -79,26 +86,32 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
       ? 'K-Drama'
       : isAnim || lang === 'JA'
       ? 'Anime'
-      : 'Hollywood';
+      : 'Hollywood');
+
+  const genres = item.genres?.length
+    ? item.genres
+    : isAnim
+    ? ['Animation', 'Adventure']
+    : item.type === 'series'
+    ? ['Drama', 'Thriller']
+    : ['Action', 'Drama'];
 
   return {
     id: `tmdb_${item.mediaType || item.type}_${item.tmdbId}`,
     tmdbId: item.tmdbId,
     title: item.title,
-    type: isAnim ? 'animation' : item.type === 'series' ? 'series' : 'movie',
+    type: isAnim && item.type !== 'series' ? 'animation' : item.type === 'series' ? 'series' : 'movie',
     year: item.year || 2026,
     rating: item.rating || 7.5,
     country,
     regionTag,
     language: 'Original Audio',
     subtitlesAvailable: ['Original Audio', 'English Dub', 'Spanish Sub', 'French Sub'],
-    genres: isAnim
-      ? ['Animation', 'Adventure']
-      : item.type === 'series'
-      ? ['Drama', 'Thriller']
-      : ['Action', 'Drama'],
-    quality: '4K',
-    badge: item.rating >= 8 ? '4K' : 'HD',
+    genres,
+    quality: '1080p',
+    badge: 'Request',
+    isDraft: true,
+    hasStreamLinks: false,
     runtime: item.type === 'series' ? 'TV Series' : 'Movie',
     poster:
       item.poster ||

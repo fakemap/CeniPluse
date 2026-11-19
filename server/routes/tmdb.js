@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const store = require('../db/store');
+const { mapTmdbGenreIds, resolveRegionAndCountry } = require('../utils/tmdbGenreMap');
 
 const router = express.Router();
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -15,7 +16,7 @@ const cacheStats = {
 };
 
 function getTmdbKey() {
-  return (store.getSettings().tmdbApiKey || '').trim();
+  return (store.getSettings().tmdbApiKey || process.env.TMDB_API_KEY || '').trim();
 }
 
 async function tmdbFetch(endpoint, params = {}) {
@@ -67,9 +68,23 @@ async function tmdbFetch(endpoint, params = {}) {
   return data;
 }
 
-function normalizeTmdbItem(item, forcedType) {
+function normalizeTmdbItem(item, forcedType, overrides = {}) {
   const mediaType = forcedType || item.media_type || (item.first_air_date ? 'tv' : 'movie');
   const release = item.release_date || item.first_air_date || '';
+  const lang = (item.original_language || 'en').toUpperCase();
+  const originCountry = String(
+    overrides.originCountry || (item.origin_country && item.origin_country[0]) || ''
+  ).toUpperCase();
+  const rawGenres =
+    Array.isArray(item.genres) && item.genres.length > 0
+      ? item.genres.map((g) => g.name || g).filter(Boolean)
+      : mapTmdbGenreIds(item.genre_ids, mediaType);
+  const genres =
+    String(overrides.discoverGenre || '') === '16' && !rawGenres.includes('Animation')
+      ? ['Animation', ...rawGenres].slice(0, 4)
+      : rawGenres;
+  const { country, regionTag } = resolveRegionAndCountry(originCountry, lang, genres);
+
   return {
     tmdbId: item.id,
     type: mediaType === 'tv' ? 'series' : 'movie',
@@ -81,7 +96,11 @@ function normalizeTmdbItem(item, forcedType) {
     votes: item.vote_count || 0,
     poster: item.poster_path ? `${IMG_BASE}/w500${item.poster_path}` : '',
     backdrop: item.backdrop_path ? `${IMG_BASE}/w1280${item.backdrop_path}` : '',
-    language: (item.original_language || 'en').toUpperCase(),
+    language: lang,
+    originCountry,
+    country,
+    regionTag,
+    genres,
   };
 }
 
@@ -125,8 +144,10 @@ router.get('/discover', async (req, res) => {
     if (req.query.genre) params.with_genres = String(req.query.genre);
     const data = await tmdbFetch(`/discover/${mediaType}`, params);
     const items = (data.results || []).map((r) => ({
-      ...normalizeTmdbItem(r, mediaType),
-      originCountry: req.query.country ? String(req.query.country).toUpperCase() : '',
+      ...normalizeTmdbItem(r, mediaType, {
+        originCountry: req.query.country ? String(req.query.country).toUpperCase() : '',
+        discoverGenre: req.query.genre ? String(req.query.genre) : '',
+      }),
       discoverGenre: req.query.genre ? String(req.query.genre) : '',
     }));
     res.json({ items });
