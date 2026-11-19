@@ -17,6 +17,7 @@ const { securityHeaders, createRateLimiter } = require('./middleware/security');
 const app = express();
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(securityHeaders);
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -100,18 +101,22 @@ app.use((err, req, res, _next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('\n======================================================');
-  console.log('  CINEBOX — Cinema Streaming & Download Hub Running');
-  console.log('======================================================');
-  console.log(`  Local:   http://localhost:${PORT}`);
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        console.log(`  Wi-Fi:   http://${net.address}:${PORT}`);
+if (!process.env.VERCEL && require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('\n======================================================');
+    console.log('  CINEBOX — Cinema Streaming & Download Hub Running');
+    console.log('======================================================');
+    console.log(`  Local:   http://localhost:${PORT}`);
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === 'IPv4' && !net.internal) {
+          console.log(`  Wi-Fi:   http://${net.address}:${PORT}`);
+        }
       }
     }
-  }
-  console.log('======================================================\n');
-});
+    console.log('======================================================\n');
+  });
+}
+
+module.exports = app;

@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const store = require('../db/store');
+const { IS_VERCEL } = require('../config');
 const {
   isSafeExternalUrl,
   requireAdminAuth,
@@ -911,6 +912,7 @@ function scheduleAutoHarvest() {
     clearInterval(autoHarvestTimer);
     autoHarvestTimer = null;
   }
+  if (IS_VERCEL) return;
   const cfg = getAutoHarvestConfig();
   if (!cfg.enabled) {
     cfg.nextRunAt = null;
@@ -921,6 +923,7 @@ function scheduleAutoHarvest() {
   cfg.nextRunAt = new Date(Date.now() + ms).toISOString();
   store.save();
   autoHarvestTimer = setInterval(runAutoHarvestTick, ms);
+  if (autoHarvestTimer.unref) autoHarvestTimer.unref();
 }
 
 // Start recurring scheduler automatically on server boot

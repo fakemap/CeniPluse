@@ -11,9 +11,13 @@ class JsonStore {
   }
 
   init() {
-    const dir = path.dirname(this.filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err) {
+      console.warn('[Store] Unable to ensure data directory:', err.message);
     }
 
     if (!fs.existsSync(this.filePath)) {
@@ -42,9 +46,13 @@ class JsonStore {
   }
 
   save() {
-    const tempPath = `${this.filePath}.tmp`;
-    fs.writeFileSync(tempPath, JSON.stringify(this.data, null, 2), 'utf-8');
-    fs.renameSync(tempPath, this.filePath);
+    try {
+      const tempPath = `${this.filePath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(this.data, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.filePath);
+    } catch (err) {
+      console.warn('[Store] Non-fatal persistence skip:', err.message);
+    }
   }
 
   getAll() {
