@@ -52,7 +52,7 @@ export const ContinueWatchingRail: React.FC<ContinueWatchingRailProps> = ({
         </div>
       </div>
 
-      <div className="flex overflow-x-auto gap-3 md:gap-4 px-4 md:px-0 snap-x snap-mandatory scrollbar-hide pb-1">
+      <div className="flex overflow-x-auto gap-3 md:gap-4 px-4 md:px-0 scroll-px-4 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-1">
         {entries.map(({ item, progress }) => {
           const safeDuration = progress.durationSec > 0 ? progress.durationSec : 5400;
           const pct = Math.min(

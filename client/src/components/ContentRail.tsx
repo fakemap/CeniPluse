@@ -75,7 +75,7 @@ export const ContentRail: React.FC<ContentRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-3 px-4 md:px-0 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
+          className="flex overflow-x-auto gap-3 px-4 md:px-0 scroll-px-4 md:scroll-px-0 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
         >
           {items.map((item) => (
             <div

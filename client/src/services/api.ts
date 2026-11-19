@@ -386,6 +386,9 @@ export const backendApi = {
     const res = await fetch(`/api/cms/admin/titles?${qs.toString()}`, {
       headers: getAuthHeaders(),
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('AUTH_REQUIRED');
+    }
     if (!res.ok) throw new Error('Failed to load Admin CMS inventory');
     return res.json();
   },

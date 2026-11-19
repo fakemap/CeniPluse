@@ -72,7 +72,7 @@ export const TopTenRail: React.FC<TopTenRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-3 md:gap-5 px-4 md:px-0 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
+          className="flex overflow-x-auto gap-3 md:gap-5 px-4 md:px-0 scroll-px-4 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
         >
           {topItems.map((item, idx) => {
             const rank = idx + 1;

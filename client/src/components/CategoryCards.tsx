@@ -21,7 +21,7 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
         </h2>
       </div>
 
-      <div className="flex gap-2.5 overflow-x-auto px-4 snap-x snap-mandatory scrollbar-hide pb-1.5 pt-0.5 md:grid md:grid-cols-3 lg:grid-cols-6 md:gap-3.5 md:overflow-visible md:px-0 md:pb-0">
+      <div className="flex gap-2.5 overflow-x-auto px-4 scroll-px-4 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-1.5 pt-0.5 md:grid md:grid-cols-3 lg:grid-cols-6 md:gap-3.5 md:overflow-visible md:px-0 md:pb-0">
         {cards.map((card) => {
           const isActive = activeCategoryId === card.id;
           return (

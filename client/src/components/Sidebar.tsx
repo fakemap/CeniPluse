@@ -12,7 +12,6 @@ import {
   Smartphone,
   Monitor,
   Tv2,
-  ShieldCheck,
   X,
 } from 'lucide-react';
 import type { NavRoute } from '../types/media';
@@ -37,7 +36,6 @@ const NAV_ITEMS: Array<{ id: NavRoute; label: string; icon: React.ComponentType<
   { id: 'trending', label: 'Trending', icon: Flame },
   { id: 'watchlist', label: 'Watchlist', icon: Bookmark },
   { id: 'downloads', label: 'Downloads', icon: Download },
-  { id: 'admin', label: 'Admin Studio', icon: ShieldCheck },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

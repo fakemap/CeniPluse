@@ -55,6 +55,10 @@ function readUrlState(): {
   if (typeof window === 'undefined') {
     return { route: 'home', q: '', filters: DEFAULT_FILTERS };
   }
+  const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  if (pathname === '/admin') {
+    return { route: 'admin', q: '', filters: DEFAULT_FILTERS };
+  }
   const params = new URLSearchParams(window.location.search);
   const rawView = (params.get('view') || 'home') as NavRoute;
   const route: NavRoute = VALID_ROUTES.has(rawView) ? rawView : 'home';
@@ -264,20 +268,26 @@ export const App: React.FC = () => {
 
   // Synchronize route, search query, and filters bidirectionally with URL query parameters + document.title
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (activeRoute !== 'home') params.set('view', activeRoute);
-    if (searchQuery.trim()) params.set('q', searchQuery.trim());
-    if (filters.genre !== 'All') params.set('genre', filters.genre);
-    if (filters.country !== 'All') params.set('country', filters.country);
-    if (filters.year !== 'All') params.set('year', filters.year);
-    if (filters.language !== 'All') params.set('lang', filters.language);
-    if (filters.sortBy !== 'For You') params.set('sort', filters.sortBy);
-    if (selectedMedia?.item?.id) params.set('title', selectedMedia.item.id);
+    if (activeRoute === 'admin' && !selectedMedia?.item) {
+      if (window.location.pathname !== '/admin' || window.location.search) {
+        window.history.replaceState(null, '', '/admin');
+      }
+    } else {
+      const params = new URLSearchParams();
+      if (activeRoute !== 'home') params.set('view', activeRoute);
+      if (searchQuery.trim()) params.set('q', searchQuery.trim());
+      if (filters.genre !== 'All') params.set('genre', filters.genre);
+      if (filters.country !== 'All') params.set('country', filters.country);
+      if (filters.year !== 'All') params.set('year', filters.year);
+      if (filters.language !== 'All') params.set('lang', filters.language);
+      if (filters.sortBy !== 'For You') params.set('sort', filters.sortBy);
+      if (selectedMedia?.item?.id) params.set('title', selectedMedia.item.id);
 
-    const qs = params.toString();
-    const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
-    if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
-      window.history.replaceState(null, '', nextUrl);
+      const qs = params.toString();
+      const nextUrl = `/${qs ? `?${qs}` : ''}`;
+      if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+        window.history.replaceState(null, '', nextUrl);
+      }
     }
 
     if (selectedMedia?.item) {
@@ -603,7 +613,11 @@ export const App: React.FC = () => {
               title="Featured Releases (Published Live)"
               items={publishedCatalog}
               watchlistIds={watchlistIds}
-              onMore={() => handleNavigate('admin')}
+              onMore={() =>
+                openDirectoryWith('Featured Releases', 'all', {
+                  sortBy: 'Latest',
+                })
+              }
               onPlay={handlePlayItem}
               onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
               onToggleWatchlist={handleToggleWatchlist}
@@ -772,6 +786,9 @@ export const App: React.FC = () => {
         <ErrorBoundary fallbackTitle="Admin Studio encountered an error">
           <Suspense fallback={<GridSkeleton count={8} />}>
             <AdminPortalView
+              userEmail={userEmail}
+              onRequireAuth={() => setActiveModal('signin')}
+              onBackHome={() => handleNavigate('home')}
               onCatalogChanged={() => {
                 reloadPublicCatalog();
               }}

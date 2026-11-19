@@ -32,14 +32,21 @@ interface AdminPortalViewProps {
   onCatalogChanged: () => void;
   onPreviewMedia: (item: MediaItem) => void;
   initialTab?: AdminTab;
+  userEmail?: string | null;
+  onRequireAuth?: () => void;
+  onBackHome?: () => void;
 }
 
 export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onCatalogChanged,
   onPreviewMedia,
   initialTab = 'draft',
+  userEmail = null,
+  onRequireAuth,
+  onBackHome,
 }) => {
   const [tab, setTab] = useState<AdminTab>(initialTab);
+  const [authRequired, setAuthRequired] = useState(false);
   const [summary, setSummary] = useState<{
     total: number;
     published: number;
@@ -164,6 +171,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         region: filterRegion,
         genre: filterGenre,
       });
+      setAuthRequired(false);
       setSummary(data.summary);
       setAvailableGenres(data.availableGenres || []);
       setAvailableRegions(data.availableRegions || []);
@@ -171,6 +179,12 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       if (managing) {
         const refreshed = data.items.find((x) => x.id === managing.id);
         if (refreshed) setManaging(refreshed);
+      }
+    } catch (err) {
+      if ((err as Error).message === 'AUTH_REQUIRED') {
+        setAuthRequired(true);
+      } else {
+        notify((err as Error).message || 'Failed to load Admin CMS inventory.');
       }
     } finally {
       setLoading(false);
@@ -209,7 +223,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     } else if (tab === 'requests') {
       loadRequests();
     }
-  }, [tab, filterQuery, filterType, filterRegion, filterGenre]);
+  }, [tab, filterQuery, filterType, filterRegion, filterGenre, userEmail]);
 
   // Clear inline TMDB results when user clears the Draft Queue search box
   useEffect(() => {
@@ -221,16 +235,30 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Initial load & 60-second background refresh so 5-minute auto-fetch and user requests stay live
   useEffect(() => {
-    backendApi.fetchCmsAdminTitles('all').then((d) => setSummary(d.summary)).catch(() => {});
+    backendApi
+      .fetchCmsAdminTitles('all')
+      .then((d) => {
+        setAuthRequired(false);
+        setSummary(d.summary);
+      })
+      .catch((err) => {
+        if ((err as Error).message === 'AUTH_REQUIRED') setAuthRequired(true);
+      });
     loadHarvestCategories().catch(() => {});
     loadRequests().catch(() => {});
 
     const timer = window.setInterval(() => {
-      backendApi.fetchCmsAdminTitles('all').then((d) => setSummary(d.summary)).catch(() => {});
+      backendApi
+        .fetchCmsAdminTitles('all')
+        .then((d) => {
+          setAuthRequired(false);
+          setSummary(d.summary);
+        })
+        .catch(() => {});
       loadRequests().catch(() => {});
     }, 60 * 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [userEmail]);
 
   const handleInlineTmdbSearch = async (queryOverride?: string) => {
     const q = (queryOverride ?? filterQuery).trim();
@@ -455,6 +483,47 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const activeSeasonObj = managing?.seasons?.find(
     (s) => s.seasonNumber === selectedSeasonNum
   );
+
+  if (authRequired) {
+    return (
+      <div className="px-4 md:px-0 py-14 flex items-center justify-center">
+        <div className="w-full max-w-md rounded-2xl bg-[#141821] border border-white/[0.1] p-6 sm:p-8 text-center space-y-4">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-[#00E5FF]/15 border border-[#00E5FF]/35 flex items-center justify-center text-[#00E5FF]">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-lg sm:text-xl font-extrabold text-[#F8FAFC]">
+              Admin Studio Sign-In Required
+            </h1>
+            <p className="text-xs text-[#94A3B8] leading-relaxed">
+              Sign in with your administrator email to manage drafts, attach cloud links, review viewer requests, and publish titles on Vercel.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
+            {onRequireAuth && (
+              <button
+                type="button"
+                onClick={onRequireAuth}
+                className="min-h-[42px] px-5 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold transition-colors"
+              >
+                Sign In to Continue
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (onBackHome) onBackHome();
+                else window.location.href = '/';
+              }}
+              className="min-h-[42px] px-5 rounded-full bg-[#1E2430] hover:bg-[#262E3D] border border-white/15 text-xs font-bold text-[#F8FAFC] transition-colors"
+            >
+              Back to Site
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 md:px-0 space-y-5">
