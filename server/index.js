@@ -26,6 +26,35 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 // Rate limit API endpoints to prevent abuse
 app.use('/api/', createRateLimiter({ windowMs: 60 * 1000, max: 240 }));
 
+// Synchronize state with Supabase Postgres before handling API requests and flush mutations before responding
+app.use('/api', async (req, res, next) => {
+  try {
+    await store.ensureSynced();
+  } catch (err) {
+    console.warn('[Store] Supabase sync fallback to local cache:', err.message);
+  }
+
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    if (!store.isCloudEnabled() || !store.hasPendingCloudWrites()) {
+      return origJson(body);
+    }
+    store
+      .flush()
+      .catch((err) => {
+        console.warn('[Store] Supabase flush error:', err.message);
+      })
+      .finally(() => {
+        if (!res.headersSent) {
+          origJson(body);
+        }
+      });
+    return res;
+  };
+
+  next();
+});
+
 // Serve local hls.js directly from node_modules (zero external CDN dependency)
 app.get('/vendor/hls.min.js', (req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'node_modules', 'hls.js', 'dist', 'hls.min.js'));
@@ -41,7 +70,13 @@ app.use('/api/cms', cmsRoutes);
 
 // Health endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'CinePulse', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    service: 'CinePulse',
+    database: store.isCloudEnabled() ? 'supabase' : 'local-json',
+    titlesCount: store.getCmsTitles().length,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Technical SEO: robots.txt & dynamic XML sitemap

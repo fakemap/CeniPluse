@@ -595,9 +595,7 @@ async function ensureLiveTmdbBootstrap() {
 
       if (created.length > 0) {
         const cleanRecords = created.map(({ _mediaType, ...rec }) => rec);
-        const currentList = store.getCmsTitles();
-        store.data.cmsTitles = [...currentList, ...cleanRecords];
-        store.save();
+        store.bulkUpsertCmsTitles(cleanRecords);
         console.log(`[TMDB Bootstrap] Hydrated ${cleanRecords.length} live TMDB draft titles.`);
       }
     } catch (err) {
@@ -973,6 +971,7 @@ function getHarvestCursors() {
   const all = store.getAll();
   if (!all.harvestCursors) {
     all.harvestCursors = {};
+    store.markStateDirty('harvest_cursors');
     store.save();
   }
   return all.harvestCursors;
@@ -990,6 +989,7 @@ function getAutoHarvestConfig() {
       nextRunAt: null,
       totalAutoAdded: 0,
     };
+    store.markStateDirty('auto_harvest');
     store.save();
   }
   return all.autoHarvest;
@@ -1045,6 +1045,7 @@ async function executeHarvest(categoryId = 'all', perCategory = 6) {
     }
   });
 
+  store.markStateDirty('harvest_cursors');
   store.save();
 
   let added = 0;
@@ -1098,7 +1099,11 @@ async function runAutoHarvestTick() {
     cfg.lastRunAt = new Date().toISOString();
     cfg.nextRunAt = new Date(Date.now() + cfg.intervalMinutes * 60 * 1000).toISOString();
     cfg.totalAutoAdded = (cfg.totalAutoAdded || 0) + r1.added + r2.added;
+    store.markStateDirty('auto_harvest');
     store.save();
+    if (store.isCloudEnabled()) {
+      await store.flush();
+    }
     console.log(
       `[Auto-Harvest] Added ${r1.added + r2.added} fresh TMDB titles (${HARVEST_CATEGORIES[cat1].label} + ${HARVEST_CATEGORIES[cat2].label})`
     );
@@ -1118,11 +1123,13 @@ function scheduleAutoHarvest() {
   const cfg = getAutoHarvestConfig();
   if (!cfg.enabled) {
     cfg.nextRunAt = null;
+    store.markStateDirty('auto_harvest');
     store.save();
     return;
   }
   const ms = Math.max(5, Number(cfg.intervalMinutes) || 5) * 60 * 1000;
   cfg.nextRunAt = new Date(Date.now() + ms).toISOString();
+  store.markStateDirty('auto_harvest');
   store.save();
   autoHarvestTimer = setInterval(runAutoHarvestTick, ms);
   if (autoHarvestTimer.unref) autoHarvestTimer.unref();
@@ -1204,6 +1211,7 @@ router.put('/admin/auto-harvest', (req, res) => {
   if (req.body.batchPerCycle !== undefined) {
     cfg.batchPerCycle = Math.min(20, Math.max(2, Number(req.body.batchPerCycle) || 6));
   }
+  store.markStateDirty('auto_harvest');
   store.save();
   scheduleAutoHarvest();
   res.json({

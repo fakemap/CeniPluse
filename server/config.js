@@ -36,4 +36,6 @@ module.exports = {
   UPLOADS_DIR,
   DEFAULT_MEDIA_DIR,
   ENV_TMDB_API_KEY: (process.env.TMDB_API_KEY || '').trim(),
+  SUPABASE_URL: (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, ''),
+  SUPABASE_SERVICE_ROLE_KEY: (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim(),
 };
