@@ -1,0 +1,15 @@
+node_modules/
+client/dist/
+dist/
+.env
+.env.*
+!.env.example
+server/data/*.json
+server/data/*.tsv.gz
+public/uploads/*
+media/*
+!media/.gitkeep
+*.pdf
+*.log
+.DS_Store
+Thumbs.db
