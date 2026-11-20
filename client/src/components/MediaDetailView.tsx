@@ -776,7 +776,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   };
 
   const isPaywallEnforced =
-    (monetizationConfig?.accessMode || 'soft_paywall') !== 'freemium' && !hasActiveSubscription;
+    ['soft_paywall', 'strict_gate'].includes(monetizationConfig?.accessMode || 'free') &&
+    !hasActiveSubscription;
 
   const ensureSubscribedFor = (actionLabel: string): boolean => {
     if (!isPaywallEnforced) return true;

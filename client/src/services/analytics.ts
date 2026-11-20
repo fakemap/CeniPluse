@@ -24,7 +24,7 @@ export interface AnalyticsEventPayload {
   metadata?: Record<string, unknown>;
 }
 
-export type AccessMode = 'soft_paywall' | 'freemium' | 'strict_gate';
+export type AccessMode = 'free' | 'soft_paywall' | 'freemium' | 'strict_gate';
 
 export interface MonetizationConfig {
   accessMode: AccessMode;

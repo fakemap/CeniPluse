@@ -29,8 +29,8 @@ const PLAN_PRICING_GHS = {
 };
 
 const DEFAULT_MONETIZATION_CONFIG = {
-  accessMode: 'soft_paywall', // 'soft_paywall' | 'freemium' | 'strict_gate'
-  adsEnabled: true,
+  accessMode: 'free', // 'free' | 'soft_paywall' | 'freemium' | 'strict_gate'
+  adsEnabled: false,
   adFreeForPremium: true,
   bannerEnabled: true,
   adNetworkName: 'Sponsored',
@@ -39,7 +39,7 @@ const DEFAULT_MONETIZATION_CONFIG = {
   bannerCtaText: 'Subscribe Now',
   bannerLinkUrl: '',
   // Double-Ad Slot 2 (Media Detail / Player Banner)
-  secondAdEnabled: true,
+  secondAdEnabled: false,
   secondAdNetworkName: 'Partner Offer',
   secondAdTitle: 'Watch Without Limits — Zero Ads, Instant HD Downloads',
   secondAdSubtitle: 'Upgrade to CinePulse Premium for instant access to every movie, series & subtitle.',
@@ -343,7 +343,7 @@ router.get('/monetization-config', (req, res) => {
     cfg.paystackPublicKey || process.env.PAYSTACK_PUBLIC_KEY || ''
   ).trim();
   return res.json({
-    accessMode: cfg.accessMode || 'soft_paywall',
+    accessMode: cfg.accessMode || 'free',
     adsEnabled: Boolean(cfg.adsEnabled),
     adFreeForPremium: cfg.adFreeForPremium !== false,
     bannerEnabled: cfg.bannerEnabled !== false,
@@ -352,7 +352,7 @@ router.get('/monetization-config', (req, res) => {
     bannerSubtitle: cfg.bannerSubtitle || DEFAULT_MONETIZATION_CONFIG.bannerSubtitle,
     bannerCtaText: cfg.bannerCtaText || 'Subscribe Now',
     bannerLinkUrl: cfg.bannerLinkUrl || '',
-    secondAdEnabled: cfg.secondAdEnabled !== false,
+    secondAdEnabled: cfg.secondAdEnabled === true,
     secondAdNetworkName: cfg.secondAdNetworkName || 'Partner Offer',
     secondAdTitle: cfg.secondAdTitle || DEFAULT_MONETIZATION_CONFIG.secondAdTitle,
     secondAdSubtitle: cfg.secondAdSubtitle || DEFAULT_MONETIZATION_CONFIG.secondAdSubtitle,
@@ -791,7 +791,7 @@ router.get('/admin/dashboard', requireAdminAuth, async (req, res) => {
 router.put('/admin/monetization-config', requireAdminAuth, (req, res) => {
   const b = req.body || {};
   const patch = {};
-  if (['soft_paywall', 'freemium', 'strict_gate'].includes(b.accessMode)) {
+  if (['free', 'soft_paywall', 'freemium', 'strict_gate'].includes(b.accessMode)) {
     patch.accessMode = b.accessMode;
   }
   if (typeof b.adsEnabled === 'boolean') patch.adsEnabled = b.adsEnabled;

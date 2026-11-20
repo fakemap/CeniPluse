@@ -322,8 +322,8 @@ export const App: React.FC = () => {
   }, [userEmail]);
 
   const handlePlayItem = (item: MediaItem) => {
-    const mode = monetizationConfig?.accessMode || 'soft_paywall';
-    if (mode !== 'freemium' && !hasActiveSubscription) {
+    const mode = monetizationConfig?.accessMode || 'free';
+    if (['soft_paywall', 'strict_gate'].includes(mode) && !hasActiveSubscription) {
       setSelectedMedia({ item, autoPlay: false });
       openPaywallModal(
         `Subscribe to CinePulse Premium (from GHS 25/mo via MoMo or Card) to stream "${item.title}" ad-free in HD.`

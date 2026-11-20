@@ -1130,12 +1130,15 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
                     Site Access &amp; Subscription Paywall Mode
                   </span>
                   <select
-                    value={monetCfg.accessMode || 'soft_paywall'}
+                    value={monetCfg.accessMode || 'free'}
                     onChange={(e) =>
                       setMonetCfg({ ...monetCfg, accessMode: e.target.value as AccessMode })
                     }
                     className="w-full min-h-[40px] px-3 rounded-xl bg-[#0B0D12] border border-[#00E5FF]/35 text-xs font-bold text-[#F8FAFC] outline-none"
                   >
+                    <option value="free">
+                      100% Free (No Paywall, No Ads) — Current
+                    </option>
                     <option value="soft_paywall">
                       Soft Paywall + Ads (Browse Free, Subscribe to Watch &amp; Download)
                     </option>
