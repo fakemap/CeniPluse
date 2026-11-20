@@ -135,13 +135,33 @@ router.get('/trending', async (req, res) => {
   }
 });
 
-// GET /api/tmdb/discover?type=movie|tv&country=NG&genre=16
+// GET /api/tmdb/discover?type=movie|tv&country=NG&genre=16&year=2025&sort_by=popularity.desc&page=2
 router.get('/discover', async (req, res) => {
   try {
     const mediaType = req.query.type === 'tv' ? 'tv' : 'movie';
-    const params = { sort_by: 'popularity.desc', page: Number(req.query.page) || 1 };
+    const page = Math.min(500, Math.max(1, Number(req.query.page) || 1));
+    const allowedSorts = new Set([
+      'popularity.desc',
+      'vote_average.desc',
+      'primary_release_date.desc',
+      'first_air_date.desc',
+      'vote_count.desc',
+    ]);
+    let sortBy = String(req.query.sort_by || 'popularity.desc');
+    if (!allowedSorts.has(sortBy)) sortBy = 'popularity.desc';
+    if (mediaType === 'tv' && sortBy === 'primary_release_date.desc') {
+      sortBy = 'first_air_date.desc';
+    }
+
+    const params = { sort_by: sortBy, page };
+    if (sortBy === 'vote_average.desc') params['vote_count.gte'] = 150;
     if (req.query.country) params.with_origin_country = String(req.query.country).toUpperCase();
     if (req.query.genre) params.with_genres = String(req.query.genre);
+    if (req.query.year && /^\d{4}$/.test(String(req.query.year))) {
+      if (mediaType === 'tv') params.first_air_date_year = String(req.query.year);
+      else params.primary_release_year = String(req.query.year);
+    }
+
     const data = await tmdbFetch(`/discover/${mediaType}`, params);
     const items = (data.results || []).map((r) => ({
       ...normalizeTmdbItem(r, mediaType, {
@@ -150,7 +170,12 @@ router.get('/discover', async (req, res) => {
       }),
       discoverGenre: req.query.genre ? String(req.query.genre) : '',
     }));
-    res.json({ items });
+    res.json({
+      items,
+      page: data.page || page,
+      totalPages: Math.min(500, data.total_pages || 1),
+      totalResults: data.total_results || items.length,
+    });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

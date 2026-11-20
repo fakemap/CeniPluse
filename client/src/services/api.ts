@@ -252,6 +252,81 @@ export const backendApi = {
     }
   },
 
+  async discoverTmdbPage(opts: {
+    type: 'movie' | 'tv';
+    page: number;
+    genre?: string;
+    country?: string;
+    year?: string;
+    sortBy?: string;
+  }): Promise<{ items: MediaItem[]; page: number; totalPages: number; totalResults: number }> {
+    try {
+      const genreIdMap: Record<string, string> = {
+        Action: opts.type === 'tv' ? '10759' : '28',
+        Adventure: opts.type === 'tv' ? '10759' : '12',
+        Animation: '16',
+        Comedy: '35',
+        Crime: '80',
+        Documentary: '99',
+        Drama: '18',
+        Family: '10751',
+        Fantasy: opts.type === 'tv' ? '10765' : '14',
+        Horror: '27',
+        Mystery: '9648',
+        Romance: '10749',
+        'Sci-Fi': opts.type === 'tv' ? '10765' : '878',
+        Thriller: '53',
+      };
+      const countryCodeMap: Record<string, string> = {
+        'United States': 'US',
+        Nigeria: 'NG',
+        'United Kingdom': 'GB',
+        'South Korea': 'KR',
+        Japan: 'JP',
+        India: 'IN',
+        France: 'FR',
+        Spain: 'ES',
+        Canada: 'CA',
+      };
+      const sortMap: Record<string, string> = {
+        'For You': 'popularity.desc',
+        Hottest: 'popularity.desc',
+        Latest: opts.type === 'tv' ? 'first_air_date.desc' : 'primary_release_date.desc',
+        'Top Rated': 'vote_average.desc',
+      };
+
+      const qs = new URLSearchParams({
+        type: opts.type,
+        page: String(Math.max(1, opts.page)),
+        sort_by: sortMap[opts.sortBy || 'For You'] || 'popularity.desc',
+      });
+      if (opts.genre && opts.genre !== 'All' && genreIdMap[opts.genre]) {
+        qs.set('genre', genreIdMap[opts.genre]);
+      }
+      if (opts.country && opts.country !== 'All' && countryCodeMap[opts.country]) {
+        qs.set('country', countryCodeMap[opts.country]);
+      }
+      if (opts.year && /^\d{4}$/.test(opts.year)) {
+        qs.set('year', opts.year);
+      }
+
+      const res = await fetch(`/api/tmdb/discover?${qs.toString()}`);
+      if (!res.ok) return { items: [], page: opts.page, totalPages: 1, totalResults: 0 };
+      const data = await res.json();
+      const items = ((data.items || []) as TmdbApiItem[])
+        .filter((x) => Boolean(x.poster))
+        .map(mapTmdbToMediaItem);
+      return {
+        items,
+        page: data.page || opts.page,
+        totalPages: data.totalPages || 1,
+        totalResults: data.totalResults || items.length,
+      };
+    } catch {
+      return { items: [], page: opts.page, totalPages: 1, totalResults: 0 };
+    }
+  },
+
   async searchLiveTmdb(query: string, signal?: AbortSignal): Promise<MediaItem[]> {
     if (!query.trim()) return [];
     try {

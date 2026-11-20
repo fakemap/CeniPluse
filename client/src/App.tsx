@@ -3,6 +3,8 @@ import {
   Download,
   Bookmark,
   Trash2,
+  Loader2,
+  Plus,
 } from 'lucide-react';
 import type {
   CategoryCardItem,
@@ -634,6 +636,51 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
+  const moviesGridRef = useRef<HTMLDivElement>(null);
+  const [tmdbPageByBucket, setTmdbPageByBucket] = useState<Record<string, number>>({
+    movie: 1,
+    series: 1,
+    animation: 1,
+  });
+  const [loadingMoreCatalog, setLoadingMoreCatalog] = useState(false);
+
+  const handleLoadMoreFromTmdb = async (bucket: 'movie' | 'series' | 'animation') => {
+    if (loadingMoreCatalog) return;
+    setLoadingMoreCatalog(true);
+    try {
+      const nextPage = (tmdbPageByBucket[bucket] || 1) + 1;
+      const tmdbType: 'movie' | 'tv' = bucket === 'series' ? 'tv' : 'movie';
+      const effectiveGenre =
+        bucket === 'animation'
+          ? 'Animation'
+          : filters.genre !== 'All'
+          ? filters.genre
+          : undefined;
+      const res = await backendApi.discoverTmdbPage({
+        type: tmdbType,
+        page: nextPage,
+        genre: effectiveGenre,
+        country: filters.country !== 'All' ? filters.country : undefined,
+        year: filters.year !== 'All' ? filters.year : undefined,
+        sortBy: filters.sortBy,
+      });
+      if (res.items.length > 0) {
+        setCatalog((prev) => {
+          const existingKeys = new Set(
+            prev.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id))
+          );
+          const fresh = res.items.filter(
+            (m) => !existingKeys.has(m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)
+          );
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
+        setTmdbPageByBucket((prev) => ({ ...prev, [bucket]: nextPage }));
+      }
+    } finally {
+      setLoadingMoreCatalog(false);
+    }
+  };
+
   const openDirectoryWith = (
     heading: string,
     typeFilter: 'all' | 'movie' | 'series' | 'animation',
@@ -642,16 +689,46 @@ export const App: React.FC = () => {
     setDirectoryHeading(heading);
     setDirectoryTypeFilter(typeFilter);
     setFilters({ ...DEFAULT_FILTERS, ...patch });
-    setActiveRoute('series');
-    window.scrollTo({ top: 0, behavior: 'instant' });
+
+    if (typeFilter === 'movie') {
+      setActiveRoute('movies');
+      window.setTimeout(() => {
+        moviesGridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    } else if (typeFilter === 'animation') {
+      setActiveRoute('animation');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } else {
+      setActiveRoute('series');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   };
 
   const handleSelectCategoryCard = (card: CategoryCardItem) => {
     setActiveCategoryCard(card.id);
+    if (activeRoute === 'movies') {
+      // Stay on Movies page — filter & scroll smoothly to the Browse Movies grid below
+      setDirectoryHeading(card.id === 'all' ? 'All Movies' : `${card.label} Movies`);
+      setDirectoryTypeFilter('movie');
+      setFilters(
+        card.id === 'all' ? DEFAULT_FILTERS : { ...DEFAULT_FILTERS, ...card.filterPatch }
+      );
+      window.setTimeout(() => {
+        moviesGridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+      return;
+    }
+
     if (activeRoute === 'home' || card.id === 'all') {
+      const targetType =
+        card.id === 'anime'
+          ? 'animation'
+          : card.id === 'all'
+          ? 'movie'
+          : 'all';
       openDirectoryWith(
-        card.id === 'all' ? 'Browse All Titles' : card.label,
-        'all',
+        card.id === 'all' ? 'Explore All Movies' : card.label,
+        targetType,
         card.filterPatch
       );
     } else {
@@ -663,10 +740,33 @@ export const App: React.FC = () => {
     () => sortItems(catalog.filter((m) => m.type === 'series'), 'Hottest'),
     [catalog]
   );
-  const trendingMovies = useMemo(
-    () => sortItems(catalog.filter((m) => m.type === 'movie'), 'Hottest'),
-    [catalog]
-  );
+  const trendingSeries = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return [...catalog.filter((m) => m.type === 'series')].sort((a, b) => {
+      const aRecent = a.year >= currentYear - 2 ? 1 : 0;
+      const bRecent = b.year >= currentYear - 2 ? 1 : 0;
+      return (
+        bRecent - aRecent ||
+        Number(Boolean(b.trending)) - Number(Boolean(a.trending)) ||
+        b.views - a.views ||
+        b.rating - a.rating
+      );
+    });
+  }, [catalog]);
+  const trendingMovies = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return [...catalog.filter((m) => m.type === 'movie')].sort((a, b) => {
+      const aRecent = a.year >= currentYear - 2 ? 1 : 0;
+      const bRecent = b.year >= currentYear - 2 ? 1 : 0;
+      return (
+        bRecent - aRecent ||
+        Number(Boolean(b.trending)) - Number(Boolean(a.trending)) ||
+        b.views - a.views ||
+        b.rating - a.rating
+      );
+    });
+  }, [catalog]);
+  const topTenMovies = useMemo(() => trendingMovies.slice(0, 10), [trendingMovies]);
   const regionalNollywood = useMemo(
     () => catalog.filter((m) => m.country === 'Nigeria' || m.regionTag === 'Nollywood'),
     [catalog]
@@ -678,32 +778,50 @@ export const App: React.FC = () => {
   const topRatedAll = useMemo(() => sortItems(catalog, 'Top Rated').slice(0, 14), [catalog]);
 
   const spotlightMovies = useMemo(() => {
-    const base = catalog.filter((m) => m.type === 'movie' || m.type === 'animation');
+    const base = catalog.filter((m) => m.type === 'movie');
     return sortItems(
       base.filter((m) => matchesFilters(m, filters)),
       filters.sortBy
     );
   }, [catalog, filters]);
 
+  // Always showcase NEW, TRENDING & MOST-WATCHED movies/series in the top Hero Carousel (no old classics)
   const heroPool = useMemo(() => {
-    const hasSnippetAsset = (m: MediaItem) =>
-      Boolean(m.previewVideoUrl || m.sources.length > 0 || m.trailerYoutubeId);
-    const publishedWithBackdrop = publishedCatalog.filter((m) => m.backdrop);
-    const snippetWithBackdrop = catalog.filter(
-      (m) =>
-        m.backdrop &&
-        hasSnippetAsset(m) &&
-        !publishedWithBackdrop.some((p) => p.id === m.id)
+    const currentYear = new Date().getFullYear();
+    const minHeroYear = currentYear - 2;
+    const scoreForHero = (m: MediaItem) => {
+      const isNew = m.year >= minHeroYear ? 1 : 0;
+      const isTrending = m.trending ? 1 : 0;
+      return (
+        isNew * 1_000_000 +
+        isTrending * 200_000 +
+        Math.min(m.views, 500_000) +
+        Math.round(m.rating * 10_000) +
+        m.year * 100
+      );
+    };
+    const withBackdrop = catalog.filter((m) => Boolean(m.backdrop));
+    const recent = withBackdrop.filter((m) => m.year >= minHeroYear);
+    const pool = (recent.length >= 6 ? recent : withBackdrop).sort(
+      (a, b) => scoreForHero(b) - scoreForHero(a)
     );
-    const othersWithBackdrop = catalog.filter(
-      (m) =>
-        m.backdrop &&
-        !publishedWithBackdrop.some((p) => p.id === m.id) &&
-        !snippetWithBackdrop.some((s) => s.id === m.id)
-    );
-    const pool = [...publishedWithBackdrop, ...snippetWithBackdrop, ...othersWithBackdrop];
     return (pool.length ? pool : catalog).slice(0, 6);
-  }, [publishedCatalog, catalog]);
+  }, [catalog]);
+
+  const movieHeroPool = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const minHeroYear = currentYear - 2;
+    const moviesWithBackdrop = catalog.filter((m) => m.type === 'movie' && Boolean(m.backdrop));
+    const recent = moviesWithBackdrop.filter((m) => m.year >= minHeroYear);
+    const pool = (recent.length >= 4 ? recent : moviesWithBackdrop).sort(
+      (a, b) =>
+        b.year - a.year ||
+        Number(Boolean(b.trending)) - Number(Boolean(a.trending)) ||
+        b.views - a.views ||
+        b.rating - a.rating
+    );
+    return (pool.length ? pool : heroPool).slice(0, 6);
+  }, [catalog, heroPool]);
 
   const directoryItems = useMemo(() => {
     const base =
@@ -824,20 +942,30 @@ export const App: React.FC = () => {
           )}
 
           <ContentRail
-            title="Popular Series"
-            items={popularSeries}
+            title="Trending Movies"
+            items={trendingMovies}
             watchlistIds={watchlistIds}
-            onMore={() => openDirectoryWith('All Series', 'series', { sortBy: 'Hottest' })}
+            onMore={() => openDirectoryWith('Trending Movies', 'movie', { sortBy: 'Hottest' })}
             onPlay={handlePlayItem}
             onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
             onToggleWatchlist={handleToggleWatchlist}
           />
 
           <ContentRail
-            title="Trending Movies"
-            items={trendingMovies}
+            title="Trending Series"
+            items={trendingSeries}
             watchlistIds={watchlistIds}
-            onMore={() => openDirectoryWith('All Movies', 'movie', { sortBy: 'Hottest' })}
+            onMore={() => openDirectoryWith('Trending Series', 'series', { sortBy: 'Hottest' })}
+            onPlay={handlePlayItem}
+            onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+            onToggleWatchlist={handleToggleWatchlist}
+          />
+
+          <ContentRail
+            title="Popular Series"
+            items={popularSeries}
+            watchlistIds={watchlistIds}
+            onMore={() => openDirectoryWith('All Series', 'series', { sortBy: 'Hottest' })}
             onPlay={handlePlayItem}
             onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
             onToggleWatchlist={handleToggleWatchlist}
@@ -879,19 +1007,19 @@ export const App: React.FC = () => {
       );
     }
 
-    // 2. MOVIES / CATEGORY SPOTLIGHT VIEW
+    // 2. MOVIES SPOTLIGHT & FULL FLOWING MOVIES GRID VIEW
     if (activeRoute === 'movies') {
-      const actionMovies = spotlightMovies.filter((m) => m.genres.includes('Action'));
-      const thrillerHorror = spotlightMovies.filter(
+      const actionMovies = trendingMovies.filter((m) => m.genres.includes('Action'));
+      const thrillerHorror = trendingMovies.filter(
         (m) => m.genres.includes('Horror') || m.genres.includes('Thriller')
       );
 
       return (
         <div>
           <HeroCarousel
-            items={heroPool}
+            items={movieHeroPool}
             watchlistIds={watchlistIds}
-            onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+            onPlay={handlePlayItem}
             onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
             onToggleWatchlist={handleToggleWatchlist}
           />
@@ -903,27 +1031,34 @@ export const App: React.FC = () => {
               onSelectCategory={handleSelectCategoryCard}
             />
 
-            <ContentRail
-              title={
-                activeCategoryCard === 'all'
-                  ? 'Trending Movies'
-                  : `${CATEGORY_CARDS.find((c) => c.id === activeCategoryCard)?.label || ''} Spotlight`
-              }
-              items={spotlightMovies}
+            {/* TOP 10 MOVIES TODAY */}
+            <TopTenRail
+              title="Top 10 Movies Today"
+              subtitle="Most watched & trending films right now"
+              items={topTenMovies}
               watchlistIds={watchlistIds}
-              onMore={() => openDirectoryWith('All Movies', 'movie', filters)}
-              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onPlay={handlePlayItem}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+
+            <ContentRail
+              title="Trending Movies"
+              items={trendingMovies.slice(0, 20)}
+              watchlistIds={watchlistIds}
+              onMore={() => openDirectoryWith('Trending Movies', 'movie', { sortBy: 'Hottest' })}
+              onPlay={handlePlayItem}
               onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
               onToggleWatchlist={handleToggleWatchlist}
             />
 
             {actionMovies.length > 0 && (
               <ContentRail
-                title="Action"
-                items={actionMovies}
+                title="Action Movies"
+                items={actionMovies.slice(0, 20)}
                 watchlistIds={watchlistIds}
                 onMore={() => openDirectoryWith('Action Movies', 'movie', { genre: 'Action' })}
-                onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+                onPlay={handlePlayItem}
                 onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
                 onToggleWatchlist={handleToggleWatchlist}
               />
@@ -932,16 +1067,93 @@ export const App: React.FC = () => {
             {thrillerHorror.length > 0 && (
               <ContentRail
                 title="Horror & Thriller"
-                items={thrillerHorror}
+                items={thrillerHorror.slice(0, 20)}
                 watchlistIds={watchlistIds}
                 onMore={() =>
-                  openDirectoryWith('Horror & Thriller', 'movie', { genre: 'Thriller' })
+                  openDirectoryWith('Horror & Thriller Movies', 'movie', { genre: 'Thriller' })
                 }
-                onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+                onPlay={handlePlayItem}
                 onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
                 onToggleWatchlist={handleToggleWatchlist}
               />
             )}
+
+            {/* FULL FLOWING MOVIES GRID BELOW (Just like Animation — scroll down to explore all movies) */}
+            <div ref={moviesGridRef} className="pt-4 scroll-mt-20">
+              <FilterMatrix
+                filters={filters}
+                onChange={(patch) => setFilters((prev) => ({ ...prev, ...patch }))}
+                onReset={() => {
+                  setFilters(DEFAULT_FILTERS);
+                  setDirectoryHeading('');
+                  setActiveCategoryCard('all');
+                }}
+              />
+
+              <div className="flex items-center justify-between px-4 md:px-0 mb-3 md:mb-4">
+                <h2 className="text-base md:text-xl font-extrabold text-[#F8FAFC]">
+                  {directoryHeading || 'Explore All Movies'}
+                </h2>
+                <span className="text-xs font-semibold text-[#94A3B8] tabular-nums">
+                  {spotlightMovies.length} movies loaded
+                </span>
+              </div>
+
+              {spotlightMovies.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+                  {spotlightMovies.map((item) => (
+                    <PosterCard
+                      key={item.id}
+                      item={item}
+                      showCast
+                      showDirectoryBadges
+                      inWatchlist={watchlistIds.has(item.id)}
+                      onPlay={handlePlayItem}
+                      onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
+                      onToggleWatchlist={handleToggleWatchlist}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="mx-4 md:mx-0 rounded-2xl bg-[#141821] border border-white/[0.06] py-12 text-center space-y-3">
+                  <p className="text-sm text-[#94A3B8]">
+                    No movies matched your current filter selection.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilters(DEFAULT_FILTERS);
+                      setDirectoryHeading('');
+                      setActiveCategoryCard('all');
+                    }}
+                    className="px-4 py-2 rounded-full bg-[#00E5FF] text-[#071018] text-xs font-extrabold"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              )}
+
+              <div className="flex justify-center pt-7 pb-4">
+                <button
+                  type="button"
+                  disabled={loadingMoreCatalog}
+                  onClick={() => handleLoadMoreFromTmdb('movie')}
+                  className="min-h-[44px] px-6 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-[#00E5FF]/40 text-xs sm:text-sm font-extrabold text-[#00E5FF] inline-flex items-center gap-2 transition-colors disabled:opacity-60"
+                >
+                  {loadingMoreCatalog ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading More Movies...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Load More Movies (Page {(tmdbPageByBucket.movie || 1) + 1})
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       );
@@ -1024,20 +1236,48 @@ export const App: React.FC = () => {
           </div>
 
           {directoryItems.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
-              {directoryItems.map((item) => (
-                <PosterCard
-                  key={item.id}
-                  item={item}
-                  showCast
-                  showDirectoryBadges
-                  inWatchlist={watchlistIds.has(item.id)}
-                  onPlay={(m) => setSelectedMedia({ item: m, autoPlay: true })}
-                  onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
-                  onToggleWatchlist={handleToggleWatchlist}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+                {directoryItems.map((item) => (
+                  <PosterCard
+                    key={item.id}
+                    item={item}
+                    showCast
+                    showDirectoryBadges
+                    inWatchlist={watchlistIds.has(item.id)}
+                    onPlay={handlePlayItem}
+                    onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
+                    onToggleWatchlist={handleToggleWatchlist}
+                  />
+                ))}
+              </div>
+
+              <div className="flex justify-center pt-7 pb-4">
+                <button
+                  type="button"
+                  disabled={loadingMoreCatalog}
+                  onClick={() =>
+                    handleLoadMoreFromTmdb(activeRoute === 'animation' ? 'animation' : 'series')
+                  }
+                  className="min-h-[44px] px-6 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-[#00E5FF]/40 text-xs sm:text-sm font-extrabold text-[#00E5FF] inline-flex items-center gap-2 transition-colors disabled:opacity-60"
+                >
+                  {loadingMoreCatalog ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading More {activeRoute === 'animation' ? 'Animation' : 'Series'}...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Load More {activeRoute === 'animation' ? 'Animation' : 'Series'} (Page{' '}
+                      {(tmdbPageByBucket[activeRoute === 'animation' ? 'animation' : 'series'] ||
+                        1) + 1}
+                      )
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
           ) : (
             <div className="mx-4 md:mx-0 rounded-2xl bg-[#141821] border border-white/[0.06] py-14 px-6 text-center">
               <p className="text-base font-bold text-[#F8FAFC]">No matching titles found</p>
