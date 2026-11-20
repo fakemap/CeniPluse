@@ -1224,6 +1224,124 @@ function combineVideoAudioTs(vBuf, aBuf, seq = 0) {
 }
 
 /**
+ * Merges separate single-track fMP4 (moof+mdat) fragments emitted by mux.js
+ * (typically audio-only moof followed by video-only moof) into ONE standard
+ * ISO BMFF multi-track moof (Video traf FIRST + Audio traf SECOND, with
+ * default-base-is-moof=1 and exact patched trun data_offsets) + ONE mdat.
+ * This prevents VLC from seeing an audio-only fragment at t=0 (which triggers
+ * VLC's folder album-art/ID-image display) and eliminates VLC A/V clock freezes.
+ */
+function mergeFmp4Fragments(rawChunks, seqNumber = 1) {
+  const combined = Buffer.concat(rawChunks);
+  const pairs = [];
+  let off = 0;
+
+  while (off + 8 <= combined.length) {
+    const size = combined.readUInt32BE(off);
+    if (size < 8 || off + size > combined.length) break;
+    const type = combined.subarray(off + 4, off + 8).toString('ascii');
+    if (type === 'moof' && off + size + 8 <= combined.length) {
+      const mdatOff = off + size;
+      const mdatSize = combined.readUInt32BE(mdatOff);
+      const mdatType = combined.subarray(mdatOff + 4, mdatOff + 8).toString('ascii');
+      if (mdatType === 'mdat' && mdatSize >= 8 && mdatOff + mdatSize <= combined.length) {
+        const moofBuf = combined.subarray(off, off + size);
+        const mdatPayload = combined.subarray(mdatOff + 8, mdatOff + mdatSize);
+        let mfhd = null;
+        let traf = null;
+        let trackId = 0;
+        let p = 8;
+        while (p + 8 <= moofBuf.length) {
+          const cs = moofBuf.readUInt32BE(p);
+          if (cs < 8 || p + cs > moofBuf.length) break;
+          const ct = moofBuf.subarray(p + 4, p + 8).toString('ascii');
+          if (ct === 'mfhd') mfhd = Buffer.from(moofBuf.subarray(p, p + cs));
+          else if (ct === 'traf') {
+            traf = Buffer.from(moofBuf.subarray(p, p + cs));
+            // Read trackId from tfhd
+            let tp = 8;
+            while (tp + 16 <= traf.length) {
+              const ts = traf.readUInt32BE(tp);
+              if (ts < 8 || tp + ts > traf.length) break;
+              const tt = traf.subarray(tp + 4, tp + 8).toString('ascii');
+              if (tt === 'tfhd') {
+                trackId = traf.readUInt32BE(tp + 12);
+                break;
+              }
+              tp += ts;
+            }
+          }
+          p += cs;
+        }
+        if (mfhd && traf) {
+          pairs.push({ mfhd, traf, payload: mdatPayload, trackId });
+          off = mdatOff + mdatSize;
+          continue;
+        }
+      }
+    }
+    // Unexpected box structure — return untouched
+    return combined;
+  }
+
+  if (pairs.length < 2) {
+    return combined;
+  }
+
+  // Sort so Video track (lower trackId, e.g. 256 / 1) always comes FIRST, Audio SECOND
+  pairs.sort((a, b) => a.trackId - b.trackId);
+
+  const mfhd = Buffer.from(pairs[0].mfhd);
+  if (mfhd.length >= 16) {
+    mfhd.writeUInt32BE(seqNumber >>> 0, 12);
+  }
+
+  const totalTrafLen = pairs.reduce((acc, item) => acc + item.traf.length, 0);
+  const newMoofSize = 8 + mfhd.length + totalTrafLen;
+
+  // Patch each traf: set default-base-is-moof (0x020000) on tfhd & exact data_offset on trun
+  let runningMdatOffset = newMoofSize + 8;
+  const patchedTrafs = pairs.map((item) => {
+    const traf = Buffer.from(item.traf);
+    let tp = 8;
+    while (tp + 8 <= traf.length) {
+      const ts = traf.readUInt32BE(tp);
+      if (ts < 8 || tp + ts > traf.length) break;
+      const tt = traf.subarray(tp + 4, tp + 8).toString('ascii');
+      if (tt === 'tfhd' && tp + 12 <= traf.length) {
+        // Set default-base-is-moof flag (0x020000)
+        traf[tp + 9] = traf[tp + 9] | 0x02;
+      } else if (tt === 'trun' && tp + 20 <= traf.length) {
+        const flags = (traf[tp + 9] << 16) | (traf[tp + 10] << 8) | traf[tp + 11];
+        if (flags & 0x01) {
+          traf.writeInt32BE(runningMdatOffset, tp + 16);
+        }
+      }
+      tp += ts;
+    }
+    runningMdatOffset += item.payload.length;
+    return traf;
+  });
+
+  const moofHeader = Buffer.alloc(8);
+  moofHeader.writeUInt32BE(newMoofSize, 0);
+  moofHeader.write('moof', 4, 'ascii');
+
+  const totalPayloadLen = pairs.reduce((acc, item) => acc + item.payload.length, 0);
+  const mdatHeader = Buffer.alloc(8);
+  mdatHeader.writeUInt32BE(8 + totalPayloadLen, 0);
+  mdatHeader.write('mdat', 4, 'ascii');
+
+  return Buffer.concat([
+    moofHeader,
+    mfhd,
+    ...patchedTrafs,
+    mdatHeader,
+    ...pairs.map((p) => p.payload),
+  ]);
+}
+
+/**
  * Pure-JavaScript HLS (.m3u8) -> Fragmented MP4 (.mp4) live downloader using mux.js.
  * Zero child processes, zero external binaries (works reliably on Bot-Hosting.net, Linux, Docker, Windows).
  */
@@ -1335,7 +1453,9 @@ async function streamHlsAsVideoDownload({
   }
 
   let wroteInit = false;
+  let moofSeq = 1;
   const pendingWrites = [];
+  let currentSegFragments = [];
 
   transmuxer.on('data', (segment) => {
     if (aborted || res.writableEnded) return;
@@ -1344,11 +1464,16 @@ async function streamHlsAsVideoDownload({
       wroteInit = true;
     }
     if (segment.data && segment.data.byteLength > 0) {
-      pendingWrites.push(Buffer.from(segment.data));
+      currentSegFragments.push(Buffer.from(segment.data));
     }
   });
 
   const flushWrites = async () => {
+    if (currentSegFragments.length > 0) {
+      const mergedFragment = mergeFmp4Fragments(currentSegFragments, moofSeq++);
+      currentSegFragments = [];
+      pendingWrites.push(mergedFragment);
+    }
     while (pendingWrites.length > 0) {
       if (aborted || res.writableEnded) return;
       const chunk = pendingWrites.shift();
