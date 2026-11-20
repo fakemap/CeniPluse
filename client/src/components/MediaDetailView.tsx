@@ -1187,8 +1187,6 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       : enriched.title
                   }
                   allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                  allowFullScreen
-                  frameBorder={0}
                   className="w-full h-full border-0 bg-black"
                 />
 
@@ -1236,7 +1234,6 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     )}?autoplay=1&rel=0&playsinline=1`}
                     title={`${enriched.title} Official Trailer`}
                     allow="autoplay; encrypted-media; fullscreen"
-                    allowFullScreen
                     className="w-full h-full border-0"
                   />
 

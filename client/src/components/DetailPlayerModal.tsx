@@ -520,8 +520,6 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
               src={resolvedEmbedUrl}
               title={enriched.title}
               allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-              allowFullScreen
-              frameBorder={0}
               className="w-full h-full border-0 bg-black"
             />
           ) : mode === 'trailer' && activeVideoKey ? (
@@ -532,7 +530,6 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
               )}?autoplay=1&rel=0`}
               title={`${enriched.title} Official Trailer`}
               allow="autoplay; encrypted-media; fullscreen"
-              allowFullScreen
               className="w-full h-full border-0"
             />
           ) : (
