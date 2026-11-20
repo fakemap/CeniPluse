@@ -273,7 +273,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                     : 'text-[#94A3B8] hover:text-[#F8FAFC]'
                 }`}
               >
-                <span>🍏 iPhone / iPad</span>
+                <span>iPhone / iPad</span>
               </button>
               <button
                 type="button"
@@ -284,7 +284,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                     : 'text-[#94A3B8] hover:text-[#F8FAFC]'
                 }`}
               >
-                <span>🤖 Android</span>
+                <span>Android</span>
               </button>
               <button
                 type="button"
@@ -295,7 +295,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                     : 'text-[#94A3B8] hover:text-[#F8FAFC]'
                 }`}
               >
-                <span>💻 PC &amp; TV</span>
+                <span>PC &amp; TV</span>
               </button>
             </div>
 
@@ -350,7 +350,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                 </div>
 
                 <div className="pt-2 border-t border-white/5 text-[11px] text-[#94A3B8]">
-                  💡 <strong>Tip:</strong> Opening from the Home Screen gives you full-screen theater mode with no browser tabs or address bars.
+                  <strong>Tip:</strong> Opening from the Home Screen gives you full-screen theater mode with no browser tabs or address bars.
                 </div>
               </div>
             )}
@@ -406,7 +406,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                 </div>
 
                 <div className="pt-2 border-t border-white/5 text-[11px] text-[#94A3B8]">
-                  🚀 Supports offline cache, push updates, and HD video streaming directly from your phone app grid.
+                  Supports offline cache, push updates, and HD video streaming directly from your phone app grid.
                 </div>
               </div>
             )}

@@ -1129,7 +1129,7 @@ export const App: React.FC = () => {
 
           {kdramaItems.length > 0 && (
             <ContentRail
-              title="🇰🇷 K-Drama & Korean Series"
+              title="K-Drama & Korean Series"
               items={kdramaItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1143,7 +1143,7 @@ export const App: React.FC = () => {
 
           {bollywoodItems.length > 0 && (
             <ContentRail
-              title="🪔 Bollywood — Indian Cinema"
+              title="Bollywood — Indian Cinema"
               items={bollywoodItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1157,7 +1157,7 @@ export const App: React.FC = () => {
 
           {actionItems.length > 0 && (
             <ContentRail
-              title="💥 Action & Adventure"
+              title="Action & Adventure"
               items={actionItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1171,7 +1171,7 @@ export const App: React.FC = () => {
 
           {romanceItems.length > 0 && (
             <ContentRail
-              title="❤️ Romance & Love Stories"
+              title="Romance & Love Stories"
               items={romanceItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1185,7 +1185,7 @@ export const App: React.FC = () => {
 
           {horrorItems.length > 0 && (
             <ContentRail
-              title="👻 Horror & Thriller"
+              title="Horror & Thriller"
               items={horrorItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1199,7 +1199,7 @@ export const App: React.FC = () => {
 
           {comedyItems.length > 0 && (
             <ContentRail
-              title="😂 Comedy & Feel-Good"
+              title="Comedy & Feel-Good"
               items={comedyItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1213,7 +1213,7 @@ export const App: React.FC = () => {
 
           {scifiItems.length > 0 && (
             <ContentRail
-              title="🚀 Sci-Fi & Fantasy"
+              title="Sci-Fi & Fantasy"
               items={scifiItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1227,7 +1227,7 @@ export const App: React.FC = () => {
 
           {documentaryItems.length > 0 && (
             <ContentRail
-              title="📽️ Documentaries & Real Stories"
+              title="Documentaries & Real Stories"
               items={documentaryItems.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>

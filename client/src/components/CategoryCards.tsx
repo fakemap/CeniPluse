@@ -8,23 +8,6 @@ interface CategoryCardsProps {
   onSelectCategory: (card: CategoryCardItem) => void;
 }
 
-// Emoji icons mapped by category id for the mobile pill strip
-const CATEGORY_ICONS: Record<string, string> = {
-  all: '🎬',
-  hollywood: '🎥',
-  nollywood: '🌍',
-  bollywood: '🪔',
-  kdrama: '🇰🇷',
-  anime: '⛩️',
-  cartoon: '🎨',
-  action: '💥',
-  romance: '❤️',
-  horror: '👻',
-  comedy: '😂',
-  trending: '🔥',
-  latest: '✨',
-};
-
 export const CategoryCards: React.FC<CategoryCardsProps> = ({
   cards,
   activeCategoryId,
@@ -38,24 +21,22 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
         </h2>
       </div>
 
-      {/* ── MOBILE: Horizontal scrollable emoji-pill strip ── */}
+      {/* ── MOBILE: Clean, text-only scrollable pill strip ── */}
       <div className="md:hidden relative">
         <div className="flex gap-2 overflow-x-auto pl-4 pr-10 scrollbar-hide pb-1 pt-0.5 snap-x">
           {cards.map((card) => {
             const isActive = activeCategoryId === card.id;
-            const emoji = CATEGORY_ICONS[card.id] || '🎞️';
             return (
               <button
                 key={card.id}
                 type="button"
                 onClick={() => onSelectCategory(card)}
-                className={`shrink-0 snap-start min-h-[44px] px-3.5 py-1.5 rounded-2xl border text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all active:scale-[0.96] ${
+                className={`shrink-0 snap-start min-h-[38px] px-4 py-1.5 rounded-full border text-xs whitespace-nowrap flex items-center gap-1.5 transition-all active:scale-[0.96] ${
                   isActive
-                    ? 'bg-[#00E5FF] border-[#00E5FF] text-[#071018] shadow-lg shadow-[#00E5FF]/20'
-                    : 'bg-[#141821] border-white/[0.1] text-[#CBD5E1] active:bg-[#1E2430]'
+                    ? 'bg-[#00E5FF] border-[#00E5FF] text-[#071018] font-extrabold shadow-md shadow-[#00E5FF]/20'
+                    : 'bg-[#141821] border-white/[0.08] text-[#CBD5E1] font-medium active:bg-[#1E2430]'
                 }`}
               >
-                <span className="text-sm leading-none">{emoji}</span>
                 <span>{card.label}</span>
                 {card.id === 'all' && (
                   <SlidersHorizontal className={`w-3 h-3 ${isActive ? 'text-[#071018]' : 'text-[#00E5FF]'}`} />
@@ -72,7 +53,6 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
       <div className="hidden md:grid md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-3.5">
         {cards.map((card) => {
           const isActive = activeCategoryId === card.id;
-          const emoji = CATEGORY_ICONS[card.id] || '🎞️';
           return (
             <button
               key={card.id}
@@ -98,7 +78,9 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
                   <span className="text-[9px] font-bold uppercase tracking-wider text-[#CBD5E1]/90 line-clamp-1">
                     {card.subtitle}
                   </span>
-                  <span className="text-base leading-none">{emoji}</span>
+                  {card.id === 'all' && (
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
