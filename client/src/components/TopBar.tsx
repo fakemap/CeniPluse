@@ -169,7 +169,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 h-12 md:h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 transition-all duration-300 ${
+      className={`fixed top-0 left-0 right-0 z-50 flex flex-col transition-all duration-300 ${
         isScrolled
           ? 'bg-[#0B0D12]/92 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.65)]'
           : transparentOnTop
@@ -177,17 +177,19 @@ export const TopBar: React.FC<TopBarProps> = ({
           : 'bg-[#0B0D12]/90 md:bg-[#141821]/88 backdrop-blur-xl border-b border-white/[0.06]'
       }`}
     >
-      {/* Left: Desktop Hamburger + Compact Brand Logo + Desktop Search */}
-      <div className="flex items-center gap-2.5 md:gap-4 flex-1 min-w-0">
-        {/* Desktop-only Sidebar Toggle (hidden on mobile <768px) */}
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          aria-label="Toggle sidebar navigation"
-          className="hidden md:flex min-w-[44px] min-h-[44px] w-10 h-10 rounded-lg items-center justify-center text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E2430] transition-colors shrink-0"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
+      {/* Top Header Bar Row (Mobile h-12, Desktop h-16) */}
+      <div className="h-12 md:h-16 px-3 md:px-6 w-full flex items-center justify-between gap-2 md:gap-4">
+        {/* Left: Hamburger + Compact Brand Logo + Desktop Search */}
+        <div className="flex items-center gap-2.5 md:gap-4 flex-1 min-w-0">
+          {/* Hamburger Menu Toggle (Mobile & Desktop) */}
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="Toggle sidebar navigation"
+            className="flex min-w-[36px] min-h-[36px] w-9 h-9 md:w-10 md:h-10 rounded-lg items-center justify-center text-[#94A3B8] hover:text-[#F8FAFC] active:text-[#00E5FF] transition-colors shrink-0"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
 
         {/* Compact Brand Logo */}
         <button
@@ -302,8 +304,17 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Right Controls: Mobile = Go Premium Crown + Language/Region Toggle + Profile Icon (Refined Compact Size) */}
+      {/* Right Controls: Mobile = App Download + Go Premium Crown + Language/Region Toggle + Profile Icon (Refined Compact Size) */}
       <div className="flex md:hidden items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => onOpenModal('app')}
+          aria-label="Install App / Download"
+          className="w-8 h-8 rounded-full bg-[#10B981]/15 active:bg-[#10B981]/30 border border-[#10B981]/40 text-[#10B981] flex items-center justify-center shrink-0"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+        </button>
+
         <button
           type="button"
           onClick={() => onOpenModal('pro')}
@@ -440,6 +451,87 @@ export const TopBar: React.FC<TopBarProps> = ({
           <User className="w-3.5 h-3.5 text-[#F8FAFC]" />
           <span>{userEmail ? userEmail.split('@')[0] : 'Log in'}</span>
         </button>
+      </div>
+      </div>
+
+      {/* Mobile-Only Row 2: Search Bar (Matching MovieBox Reference in Image 2) */}
+      <div className="md:hidden px-3.5 pb-2.5 pt-0.5 w-full relative">
+        <div
+          className={`flex items-center h-10 rounded-xl bg-[#141821]/80 backdrop-blur-md border transition-all pl-3.5 pr-2 gap-2 ${
+            isFocused
+              ? 'border-[#00E5FF]/70 shadow-lg shadow-[#00E5FF]/10'
+              : 'border-white/[0.1] hover:border-white/[0.18]'
+          }`}
+        >
+          <Search className="w-4 h-4 text-[#94A3B8] shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onFocus={() => setIsFocused(true)}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search movies/ TV Shows"
+            className="w-full bg-transparent text-xs text-[#F8FAFC] placeholder-[#94A3B8]/80 focus:outline-none"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              className="w-6 h-6 flex items-center justify-center text-[#94A3B8] hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Mobile Dropdown Suggestions */}
+        {showDropdown && (
+          <div className="absolute left-3.5 right-3.5 top-[44px] bg-[#141821] border border-white/[0.12] rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.9)] overflow-hidden z-50 animate-modal">
+            <div className="px-3.5 py-2 border-b border-white/[0.06] flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+              <span>Instant Results</span>
+              {loadingLive && <span className="text-[#00E5FF]">Syncing live...</span>}
+            </div>
+            {combinedSuggestions.length > 0 ? (
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-white/[0.04]">
+                {combinedSuggestions.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setIsFocused(false);
+                      onSelectMedia(item);
+                    }}
+                    className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-[#1E2430] active:bg-[#1E2430] text-left"
+                  >
+                    <img
+                      src={item.poster}
+                      alt={item.title}
+                      className="w-9 h-12 rounded object-cover bg-[#0B0D12] shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-[#F8FAFC] truncate">
+                        {item.title}
+                      </div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5 flex items-center gap-1.5">
+                        <span className="text-[#10B981] font-bold">{item.year}</span>
+                        <span>&bull;</span>
+                        <span className="text-[#FFB800] font-semibold flex items-center gap-0.5">
+                          <Star className="w-2.5 h-2.5 fill-[#FFB800]" />
+                          {item.rating.toFixed(1)}
+                        </span>
+                        <span>&bull;</span>
+                        <span className="truncate">{item.genres[0]}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-center text-xs text-[#94A3B8]">
+                No matching movies or series found
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );

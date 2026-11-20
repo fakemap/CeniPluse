@@ -15,32 +15,66 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
 }) => {
   return (
     <section className="mb-5 md:mb-8">
-      <div className="flex items-center justify-between px-4 md:px-0 mb-2.5 md:mb-3">
+      <div className="flex items-center justify-between px-5 sm:px-6 md:px-0 mb-2.5 md:mb-3">
         <h2 className="text-[15px] md:text-lg font-extrabold tracking-[-0.015em] text-[#F8FAFC]">
           Categories
         </h2>
       </div>
 
-      {/* ── MOBILE: Clean, text-only scrollable pill strip ── */}
+      {/* ── MOBILE: MovieBox-style horizontal card strip with backdrop imagery ── */}
       <div className="md:hidden relative">
-        <div className="flex gap-2 overflow-x-auto pl-4 pr-10 scrollbar-hide pb-1 pt-0.5 snap-x">
+        <div className="flex gap-2.5 overflow-x-auto pl-5 pr-8 sm:pl-6 scroll-px-5 sm:scroll-px-6 scrollbar-hide pb-1 pt-0.5 snap-x">
           {cards.map((card) => {
             const isActive = activeCategoryId === card.id;
+            const isAll = card.id === 'all';
+
             return (
               <button
                 key={card.id}
                 type="button"
                 onClick={() => onSelectCategory(card)}
-                className={`shrink-0 snap-start min-h-[38px] px-4 py-1.5 rounded-full border text-xs whitespace-nowrap flex items-center gap-1.5 transition-all active:scale-[0.96] ${
+                className={`shrink-0 snap-start h-[46px] rounded-xl overflow-hidden relative border text-left flex items-center px-3.5 transition-all active:scale-[0.97] ${
+                  isAll
+                    ? 'w-auto min-w-[86px]'
+                    : 'w-[126px] sm:w-[138px]'
+                } ${
                   isActive
-                    ? 'bg-[#00E5FF] border-[#00E5FF] text-[#071018] font-extrabold shadow-md shadow-[#00E5FF]/20'
-                    : 'bg-[#141821] border-white/[0.08] text-[#CBD5E1] font-medium active:bg-[#1E2430]'
+                    ? 'border-[#00E5FF] shadow-lg shadow-[#00E5FF]/25 ring-1 ring-[#00E5FF]/40'
+                    : isAll
+                    ? 'bg-[#141821] border-white/[0.12] active:bg-[#1E2430]'
+                    : `border-white/[0.08] active:border-white/20 ${card.accentBorder}`
                 }`}
               >
-                <span>{card.label}</span>
-                {card.id === 'all' && (
-                  <SlidersHorizontal className={`w-3 h-3 ${isActive ? 'text-[#071018]' : 'text-[#00E5FF]'}`} />
+                {/* Image Backdrop (except 'All') */}
+                {!isAll && card.image && (
+                  <>
+                    <img
+                      src={card.image}
+                      alt={card.label}
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 w-full h-full object-cover opacity-50"
+                    />
+                    <div className={`absolute inset-0 bg-gradient-to-r ${card.gradient || 'from-[#0B0D12]/92 via-[#0B0D12]/70 to-[#0B0D12]/30'}`} />
+                  </>
                 )}
+
+                {/* Content */}
+                <div className="relative z-10 w-full flex items-center justify-between gap-2">
+                  <span className={`text-xs font-black whitespace-nowrap tracking-tight ${
+                    isActive ? 'text-[#00E5FF]' : 'text-[#F8FAFC]'
+                  }`}>
+                    {card.label}
+                  </span>
+
+                  {isAll ? (
+                    <SlidersHorizontal className={`w-3.5 h-3.5 shrink-0 ${
+                      isActive ? 'text-[#00E5FF]' : 'text-[#94A3B8]'
+                    }`} />
+                  ) : isActive ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] shrink-0" />
+                  ) : null}
+                </div>
               </button>
             );
           })}
@@ -49,7 +83,7 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
         <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#0B0D12] via-[#0B0D12]/75 to-transparent z-10" />
       </div>
 
-      {/* ── DESKTOP: Classic image cards, 4 columns then auto-wrapping ── */}
+      {/* ── DESKTOP: Classic 7-column image cards with hover sheen ── */}
       <div className="hidden md:grid md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-3.5">
         {cards.map((card) => {
           const isActive = activeCategoryId === card.id;

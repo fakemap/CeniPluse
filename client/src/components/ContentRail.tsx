@@ -38,7 +38,7 @@ export const ContentRail: React.FC<ContentRailProps> = ({
   return (
     <section className="mb-6 md:mb-8 relative group/rail">
       {/* Bold Section Header + Touch-Friendly More > Action */}
-      <div className="flex items-center justify-between gap-3 px-4 md:px-0 mb-2.5 md:mb-3">
+      <div className="flex items-center justify-between gap-3 px-5 sm:px-6 md:px-0 mb-2.5 md:mb-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="w-1 h-4 md:h-5 rounded-full bg-[#00E5FF] shrink-0" />
           <h2 className="text-[15px] md:text-lg font-extrabold tracking-[-0.015em] text-[#F8FAFC] truncate">
@@ -75,7 +75,7 @@ export const ContentRail: React.FC<ContentRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-2.5 px-3 md:px-0 scroll-px-3 md:scroll-px-0 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
+          className="flex overflow-x-auto gap-2.5 px-5 sm:px-6 md:px-0 scroll-px-5 sm:scroll-px-6 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
         >
           {items.map((item) => (
             <div

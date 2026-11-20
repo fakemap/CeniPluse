@@ -26,6 +26,7 @@ import { hasVidLinkSupport } from './utils/vidlink';
 import { AppShell } from './components/AppShell';
 import { HeroCarousel } from './components/HeroCarousel';
 import { CategoryCards } from './components/CategoryCards';
+import { SpotlightMiniRail } from './components/SpotlightMiniRail';
 import { FilterMatrix } from './components/FilterMatrix';
 import { ContentRail } from './components/ContentRail';
 import { TopTenRail } from './components/TopTenRail';
@@ -1056,6 +1057,12 @@ export const App: React.FC = () => {
           />
 
           <div className="w-full md:px-6 lg:px-8">
+            <SpotlightMiniRail
+              items={trendingMovies.slice(0, 10)}
+              onPlay={handlePlayItem}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+            />
+
             <CategoryCards
               cards={CATEGORY_CARDS}
               activeCategoryId={activeCategoryCard}
@@ -1320,6 +1327,12 @@ export const App: React.FC = () => {
           />
 
           <div className="w-full md:px-6 lg:px-8">
+            <SpotlightMiniRail
+              items={trendingMovies.slice(0, 10)}
+              onPlay={handlePlayItem}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+            />
+
             <CategoryCards
               cards={CATEGORY_CARDS}
               activeCategoryId={activeCategoryCard}

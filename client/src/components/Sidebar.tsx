@@ -60,20 +60,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
 
-  // Completely hidden on mobile (<768px) — desktop slide-over drawer consuming 0px when closed
   return (
-    <div className="hidden md:block">
+    <div>
       {open && (
         <div
           onClick={onClose}
           aria-hidden="true"
-          className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px] transition-opacity"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm transition-opacity"
         />
       )}
 
       <aside
         aria-hidden={!open}
-        className={`fixed top-16 left-0 bottom-0 z-50 w-[240px] transition-transform duration-250 ease-out ${
+        className={`fixed top-0 md:top-16 left-0 bottom-0 z-50 w-[270px] md:w-[240px] transition-transform duration-250 ease-out ${
           open ? 'translate-x-0' : '-translate-x-full pointer-events-none'
         }`}
       >

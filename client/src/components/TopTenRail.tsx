@@ -39,7 +39,7 @@ export const TopTenRail: React.FC<TopTenRailProps> = ({
   return (
     <section className="mb-7 md:mb-9 relative group/rail">
       {/* Editorial Section Header */}
-      <div className="flex items-end justify-between px-4 md:px-0 mb-3 md:mb-4">
+      <div className="flex items-end justify-between px-5 sm:px-6 md:px-0 mb-3 md:mb-4">
         <div className="flex items-center gap-2.5">
           <span className="w-8 h-8 rounded-xl bg-[#00E5FF]/15 border border-[#00E5FF]/35 flex items-center justify-center text-[#00E5FF]">
             <TrendingUp className="w-4 h-4" />
@@ -72,7 +72,7 @@ export const TopTenRail: React.FC<TopTenRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-2.5 md:gap-5 px-3 md:px-0 scroll-px-3 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
+          className="flex overflow-x-auto gap-2.5 md:gap-5 px-5 sm:px-6 md:px-0 scroll-px-5 sm:scroll-px-6 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
         >
           {topItems.map((item, idx) => {
             const rank = idx + 1;

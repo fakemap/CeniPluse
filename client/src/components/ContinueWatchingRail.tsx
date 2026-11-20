@@ -40,7 +40,7 @@ export const ContinueWatchingRail: React.FC<ContinueWatchingRailProps> = ({
 
   return (
     <section className="mb-6 md:mb-8">
-      <div className="flex items-center justify-between px-4 md:px-0 mb-2.5 md:mb-3">
+      <div className="flex items-center justify-between px-5 sm:px-6 md:px-0 mb-2.5 md:mb-3">
         <div className="flex items-center gap-2">
           <span className="w-1 h-4 md:h-5 rounded-full bg-[#00E5FF]" />
           <h2 className="text-[15px] md:text-lg font-extrabold tracking-tight text-[#F8FAFC]">
@@ -52,7 +52,7 @@ export const ContinueWatchingRail: React.FC<ContinueWatchingRailProps> = ({
         </div>
       </div>
 
-      <div className="flex overflow-x-auto gap-3 md:gap-4 px-4 md:px-0 scroll-px-4 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-1">
+      <div className="flex overflow-x-auto gap-3 md:gap-4 px-5 sm:px-6 md:px-0 scroll-px-5 sm:scroll-px-6 snap-x snap-mandatory scrollbar-hide pb-1">
         {entries.map(({ item, progress }) => {
           const safeDuration = progress.durationSec > 0 ? progress.durationSec : 5400;
           const pct = Math.min(
