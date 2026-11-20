@@ -778,10 +778,23 @@ export const App: React.FC = () => {
 
   const handleSelectCategoryCard = (card: CategoryCardItem) => {
     setActiveCategoryCard(card.id);
+
+    // Map category IDs to their directory type
+    const animationCategories = ['anime', 'cartoon', 'animation'];
+    const seriesCategories = ['kdrama'];
+    const targetType = animationCategories.includes(card.id)
+      ? 'animation'
+      : seriesCategories.includes(card.id)
+      ? 'series'
+      : card.id === 'all'
+      ? 'movie'
+      : 'all';
+
     if (activeRoute === 'movies') {
       // Stay on Movies page — filter & scroll smoothly to the Browse Movies grid below
+      const isAnimCat = animationCategories.includes(card.id);
       setDirectoryHeading(card.id === 'all' ? 'All Movies' : `${card.label} Movies`);
-      setDirectoryTypeFilter('movie');
+      setDirectoryTypeFilter(isAnimCat ? 'animation' : 'movie');
       setFilters(
         card.id === 'all' ? DEFAULT_FILTERS : { ...DEFAULT_FILTERS, ...card.filterPatch }
       );
@@ -791,21 +804,19 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (activeRoute === 'home' || card.id === 'all') {
-      const targetType =
-        card.id === 'anime'
-          ? 'animation'
-          : card.id === 'all'
-          ? 'movie'
-          : 'all';
-      openDirectoryWith(
-        card.id === 'all' ? 'Explore All Movies' : card.label,
-        targetType,
-        card.filterPatch
-      );
-    } else {
-      setFilters((prev) => ({ ...prev, ...card.filterPatch }));
-    }
+    // Always navigate to the best directory for the category
+    const label =
+      card.id === 'all'
+        ? 'Explore All'
+        : card.id === 'kdrama'
+        ? 'K-Drama & Korean Series'
+        : card.id === 'anime'
+        ? 'Anime'
+        : card.id === 'cartoon'
+        ? 'Cartoons & Animation'
+        : card.label;
+
+    openDirectoryWith(label, targetType, card.filterPatch);
   };
 
   const popularSeries = useMemo(
@@ -848,6 +859,40 @@ export const App: React.FC = () => {
     [catalog]
   );
   const topRatedAll = useMemo(() => sortItems(catalog, 'Top Rated').slice(0, 14), [catalog]);
+
+  // ── NEW genre-specific rails ──
+  const kdramaItems = useMemo(
+    () => catalog.filter((m) => m.country === 'South Korea' || m.regionTag === 'K-Drama'),
+    [catalog]
+  );
+  const bollywoodItems = useMemo(
+    () => catalog.filter((m) => m.country === 'India' || m.regionTag === 'Bollywood'),
+    [catalog]
+  );
+  const actionItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Action')), 'Hottest'),
+    [catalog]
+  );
+  const romanceItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Romance')), 'Hottest'),
+    [catalog]
+  );
+  const horrorItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Horror')), 'Hottest'),
+    [catalog]
+  );
+  const comedyItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Comedy')), 'Hottest'),
+    [catalog]
+  );
+  const scifiItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Sci-Fi') || m.genres.includes('Fantasy')), 'Hottest'),
+    [catalog]
+  );
+  const documentaryItems = useMemo(
+    () => sortItems(catalog.filter((m) => m.genres.includes('Documentary')), 'Hottest'),
+    [catalog]
+  );
 
   const spotlightMovies = useMemo(() => {
     const base = catalog.filter((m) => m.type === 'movie');
@@ -1063,7 +1108,7 @@ export const App: React.FC = () => {
           />
 
           <ContentRail
-            title="Animation, Cartoons &amp; Anime"
+            title="Animation, Cartoons & Anime"
             items={animationItems.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('Animation, Cartoons & Anime', 'animation')}
@@ -1081,6 +1126,118 @@ export const App: React.FC = () => {
             onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
             onToggleWatchlist={handleToggleWatchlist}
           />
+
+          {kdramaItems.length > 0 && (
+            <ContentRail
+              title="🇰🇷 K-Drama & Korean Series"
+              items={kdramaItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('K-Drama & Korean Series', 'series', { country: 'South Korea' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {bollywoodItems.length > 0 && (
+            <ContentRail
+              title="🪔 Bollywood — Indian Cinema"
+              items={bollywoodItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Bollywood & Indian Cinema', 'all', { country: 'India' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {actionItems.length > 0 && (
+            <ContentRail
+              title="💥 Action & Adventure"
+              items={actionItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Action & Adventure', 'all', { genre: 'Action' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {romanceItems.length > 0 && (
+            <ContentRail
+              title="❤️ Romance & Love Stories"
+              items={romanceItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Romance & Love Stories', 'all', { genre: 'Romance' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {horrorItems.length > 0 && (
+            <ContentRail
+              title="👻 Horror & Thriller"
+              items={horrorItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Horror & Thriller', 'all', { genre: 'Horror' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {comedyItems.length > 0 && (
+            <ContentRail
+              title="😂 Comedy & Feel-Good"
+              items={comedyItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Comedy Cinema', 'all', { genre: 'Comedy' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {scifiItems.length > 0 && (
+            <ContentRail
+              title="🚀 Sci-Fi & Fantasy"
+              items={scifiItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Sci-Fi & Fantasy', 'all', { genre: 'Sci-Fi' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
+
+          {documentaryItems.length > 0 && (
+            <ContentRail
+              title="📽️ Documentaries & Real Stories"
+              items={documentaryItems.slice(0, 18)}
+              watchlistIds={watchlistIds}
+              onMore={() =>
+                openDirectoryWith('Documentaries', 'all', { genre: 'Documentary' })
+              }
+              onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
+              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          )}
           </div>
         </div>
       );
@@ -1091,6 +1248,10 @@ export const App: React.FC = () => {
       const actionMovies = trendingMovies.filter((m) => m.genres.includes('Action'));
       const thrillerHorror = trendingMovies.filter(
         (m) => m.genres.includes('Horror') || m.genres.includes('Thriller')
+      );
+      const comedyMovies = trendingMovies.filter((m) => m.genres.includes('Comedy'));
+      const scifiMovies = trendingMovies.filter(
+        (m) => m.genres.includes('Sci-Fi') || m.genres.includes('Fantasy')
       );
 
       return (
@@ -1157,6 +1318,30 @@ export const App: React.FC = () => {
               />
             )}
 
+            {comedyMovies.length > 0 && (
+              <ContentRail
+                title="Comedy Movies"
+                items={comedyMovies.slice(0, 20)}
+                watchlistIds={watchlistIds}
+                onMore={() => openDirectoryWith('Comedy Movies', 'movie', { genre: 'Comedy' })}
+                onPlay={handlePlayItem}
+                onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+                onToggleWatchlist={handleToggleWatchlist}
+              />
+            )}
+
+            {scifiMovies.length > 0 && (
+              <ContentRail
+                title="Sci-Fi & Fantasy"
+                items={scifiMovies.slice(0, 20)}
+                watchlistIds={watchlistIds}
+                onMore={() => openDirectoryWith('Sci-Fi & Fantasy Movies', 'movie', { genre: 'Sci-Fi' })}
+                onPlay={handlePlayItem}
+                onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
+                onToggleWatchlist={handleToggleWatchlist}
+              />
+            )}
+
             {/* FULL FLOWING MOVIES GRID BELOW (Just like Animation — scroll down to explore all movies) */}
             <div ref={moviesGridRef} className="pt-4 scroll-mt-20">
               <FilterMatrix
@@ -1179,7 +1364,7 @@ export const App: React.FC = () => {
               </div>
 
               {spotlightMovies.length > 0 ? (
-                <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+                <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
                   {spotlightMovies.map((item) => (
                     <PosterCard
                       key={item.id}
@@ -1316,7 +1501,7 @@ export const App: React.FC = () => {
 
           {directoryItems.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+              <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
                 {directoryItems.map((item) => (
                   <PosterCard
                     key={item.id}
@@ -1393,7 +1578,7 @@ export const App: React.FC = () => {
           </div>
 
           {watchlistItems.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+            <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
               {watchlistItems.map((item) => (
                 <PosterCard
                   key={item.id}

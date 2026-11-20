@@ -75,12 +75,12 @@ export const ContentRail: React.FC<ContentRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-3 px-4 md:px-0 scroll-px-4 md:scroll-px-0 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
+          className="flex overflow-x-auto gap-2.5 px-3 md:px-0 scroll-px-3 md:scroll-px-0 md:gap-3.5 snap-x snap-mandatory scrollbar-hide pb-1.5 scroll-smooth"
         >
           {items.map((item) => (
             <div
               key={item.id}
-              className="shrink-0 snap-start w-[39%] min-w-[136px] md:w-[calc((100%-48px)/4.4)] lg:w-[calc((100%-70px)/6)] xl:w-[calc((100%-84px)/7)] 2xl:w-[calc((100%-98px)/8)] min-[1800px]:w-[calc((100%-112px)/9)] min-[2200px]:w-[calc((100%-126px)/10)]"
+              className="shrink-0 snap-start w-[31%] min-w-[108px] sm:w-[26%] sm:min-w-[124px] md:w-[calc((100%-48px)/4.4)] lg:w-[calc((100%-70px)/6)] xl:w-[calc((100%-84px)/7)] 2xl:w-[calc((100%-98px)/8)] min-[1800px]:w-[calc((100%-112px)/9)] min-[2200px]:w-[calc((100%-126px)/10)]"
             >
               <PosterCard
                 item={item}

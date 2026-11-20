@@ -72,14 +72,14 @@ export const TopTenRail: React.FC<TopTenRailProps> = ({
 
         <div
           ref={railRef}
-          className="flex overflow-x-auto gap-3 md:gap-5 px-4 md:px-0 scroll-px-4 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
+          className="flex overflow-x-auto gap-2.5 md:gap-5 px-3 md:px-0 scroll-px-3 md:scroll-px-0 snap-x snap-mandatory scrollbar-hide pb-2 pt-1 scroll-smooth"
         >
           {topItems.map((item, idx) => {
             const rank = idx + 1;
             return (
               <div
                 key={`top10-${item.id}`}
-                className="relative shrink-0 snap-start flex items-start pl-8 md:pl-11 w-[48%] min-w-[172px] md:w-[220px] lg:w-[240px]"
+                className="relative shrink-0 snap-start flex items-start pl-7 md:pl-11 w-[41%] min-w-[145px] sm:w-[35%] sm:min-w-[160px] md:w-[220px] lg:w-[240px]"
               >
                 {/* Oversized Outlined Rank Numeral Tucked Strictly Behind Poster (Never Overlaps Title/Genre Below) */}
                 <span
