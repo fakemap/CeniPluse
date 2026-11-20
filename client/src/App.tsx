@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Download,
   Bookmark,
@@ -267,12 +267,110 @@ export const App: React.FC = () => {
     localStorage.setItem('cinepulse_watchlist', JSON.stringify(Array.from(watchlistIds)));
   }, [watchlistIds]);
 
+  // ---- Browser history (Back / Forward) support ----
+  // Every "page" (route, directory view, or opened title) gets its own history entry via pushState.
+  // Search typing / filter tweaks only replace the current entry so Back doesn't step through keystrokes.
+  type HistoryNavState = {
+    cpNav: true;
+    route: NavRoute;
+    titleId: string | null;
+    autoPlay: boolean;
+    heading: string;
+    typeFilter: 'all' | 'movie' | 'series' | 'animation';
+    scrollY: number;
+    idx?: number;
+  };
+  const lastNavKeyRef = useRef<string | null>(null);
+  const restoringFromPopRef = useRef(false);
+  const pendingScrollRef = useRef<number | null>(null);
+  const catalogRef = useRef<MediaItem[]>(catalog);
+  catalogRef.current = catalog;
+  const pendingTitleIdRef = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('title')
+  );
+
+  const MEDIA_CACHE_KEY = 'cinepulse_nav_media_cache';
+  const readMediaCache = (): Record<string, MediaItem> => {
+    try {
+      return JSON.parse(sessionStorage.getItem(MEDIA_CACHE_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  };
+  const findMediaById = (id: string): MediaItem | null =>
+    catalogRef.current.find((m) => m.id === id) || readMediaCache()[id] || null;
+
+  // Remember opened titles so Back/Forward/Reload can restore them even if they aren't in the home catalog
+  useEffect(() => {
+    const item = selectedMedia?.item;
+    if (!item) return;
+    try {
+      const cache = readMediaCache();
+      cache[item.id] = item;
+      const ids = Object.keys(cache);
+      if (ids.length > 60) ids.slice(0, ids.length - 60).forEach((k) => delete cache[k]);
+      sessionStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      // ignore quota errors
+    }
+  }, [selectedMedia]);
+
+  // Deep link / reload with ?title=... — open the title once it can be found
+  useEffect(() => {
+    const pendingId = pendingTitleIdRef.current;
+    if (!pendingId || selectedMedia) return;
+    const item = findMediaById(pendingId);
+    if (item) {
+      pendingTitleIdRef.current = null;
+      setSelectedMedia({ item, autoPlay: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog]);
+
   // Synchronize route, search query, and filters bidirectionally with URL query parameters + document.title
   useEffect(() => {
-    if (activeRoute === 'admin' && !selectedMedia?.item) {
-      if (window.location.pathname !== '/admin' || window.location.search) {
-        window.history.replaceState(null, '', '/admin');
+    const navState: HistoryNavState = {
+      cpNav: true,
+      route: activeRoute,
+      titleId: selectedMedia?.item?.id || null,
+      autoPlay: Boolean(selectedMedia?.autoPlay),
+      heading: directoryHeading,
+      typeFilter: directoryTypeFilter,
+      scrollY: 0,
+    };
+    const navKey = `${navState.route}|${navState.titleId || ''}|${navState.heading}|${navState.typeFilter}`;
+    // Title still waiting to be resolved from the URL: don't overwrite the deep link yet
+    const waitingForDeepLink = Boolean(pendingTitleIdRef.current) && !selectedMedia;
+
+    const commitUrl = (nextUrl: string) => {
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      const shouldPush =
+        lastNavKeyRef.current !== null &&
+        lastNavKeyRef.current !== navKey &&
+        !restoringFromPopRef.current;
+      if (shouldPush) {
+        // Save scroll position of the page we're leaving so Back returns to the same spot
+        const prev = window.history.state as HistoryNavState | null;
+        if (prev && prev.cpNav) {
+          window.history.replaceState({ ...prev, scrollY: window.scrollY }, '', currentUrl);
+        }
+        window.history.pushState({ ...navState, idx: (prev?.cpNav ? prev.idx || 0 : 0) + 1 }, '', nextUrl);
+      } else if (nextUrl !== currentUrl || !(window.history.state as HistoryNavState | null)?.cpNav) {
+        const prev = window.history.state as HistoryNavState | null;
+        window.history.replaceState(
+          { ...navState, scrollY: prev?.cpNav ? prev.scrollY : 0, idx: prev?.cpNav ? prev.idx || 0 : 0 },
+          '',
+          nextUrl
+        );
       }
+      lastNavKeyRef.current = navKey;
+      restoringFromPopRef.current = false;
+    };
+
+    if (waitingForDeepLink) {
+      // keep current URL untouched
+    } else if (activeRoute === 'admin' && !selectedMedia?.item) {
+      commitUrl('/admin');
     } else {
       const params = new URLSearchParams();
       if (activeRoute !== 'home') params.set('view', activeRoute);
@@ -286,9 +384,13 @@ export const App: React.FC = () => {
 
       const qs = params.toString();
       const nextUrl = `/${qs ? `?${qs}` : ''}`;
-      if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
-        window.history.replaceState(null, '', nextUrl);
-      }
+      commitUrl(nextUrl);
+    }
+
+    if (pendingScrollRef.current !== null) {
+      const y = pendingScrollRef.current;
+      pendingScrollRef.current = null;
+      requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }));
     }
 
     if (selectedMedia?.item) {
@@ -307,20 +409,52 @@ export const App: React.FC = () => {
       };
       document.title = routeTitles[activeRoute] || 'CinePulse';
     }
-  }, [activeRoute, searchQuery, filters, selectedMedia]);
+  }, [activeRoute, searchQuery, filters, selectedMedia, directoryHeading, directoryTypeFilter]);
 
   // Browser Back / Forward navigation support
   useEffect(() => {
-    const onPopState = () => {
+    const onPopState = (event: PopStateEvent) => {
       const next = readUrlState();
       const params = new URLSearchParams(window.location.search);
-      if (!params.get('title')) setSelectedMedia(null);
+      const state = event.state as HistoryNavState | null;
+      const titleId = params.get('title');
+      const restoredHeading = state?.cpNav ? state.heading || '' : '';
+      const restoredTypeFilter: HistoryNavState['typeFilter'] = state?.cpNav
+        ? state.typeFilter || 'all'
+        : next.route === 'series'
+        ? 'series'
+        : next.route === 'animation'
+        ? 'animation'
+        : 'all';
+
+      // Mark the restored entry as "current" so the URL sync effect replaces instead of pushing
+      lastNavKeyRef.current = `${next.route}|${titleId || ''}|${restoredHeading}|${restoredTypeFilter}`;
+      pendingScrollRef.current = state?.cpNav ? state.scrollY || 0 : 0;
+
+      if (titleId) {
+        const item = findMediaById(titleId);
+        if (item) {
+          pendingTitleIdRef.current = null;
+          setSelectedMedia((cur) =>
+            cur?.item.id === titleId ? cur : { item, autoPlay: Boolean(state?.autoPlay) }
+          );
+        } else {
+          pendingTitleIdRef.current = titleId;
+          setSelectedMedia(null);
+        }
+      } else {
+        setSelectedMedia(null);
+      }
+
       setActiveRoute(next.route);
       setSearchQuery(next.q);
       setFilters(next.filters);
+      setDirectoryHeading(restoredHeading);
+      setDirectoryTypeFilter(restoredTypeFilter);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [userDownloads, setUserDownloads] = useState<DownloadRecord[]>(() => {
@@ -432,6 +566,16 @@ export const App: React.FC = () => {
     backendApi.syncWatchlistToggle(id).catch(() => {
       setWatchlistIds(previousSnapshot);
     });
+  };
+
+  // In-app "Back" on the detail page: step back through browser history when we came from inside the site
+  const handleDetailBack = () => {
+    const st = window.history.state as HistoryNavState | null;
+    if (st?.cpNav && (st.idx || 0) > 0) {
+      window.history.back();
+    } else {
+      setSelectedMedia(null);
+    }
   };
 
   const handleNavigate = (route: NavRoute) => {
@@ -1037,7 +1181,7 @@ export const App: React.FC = () => {
                 catalog={catalog}
                 inWatchlist={watchlistIds.has(selectedMedia.item.id)}
                 userEmail={userEmail}
-                onBack={() => setSelectedMedia(null)}
+                onBack={handleDetailBack}
                 onToggleWatchlist={handleToggleWatchlist}
                 onSelectMedia={(rec) => setSelectedMedia({ item: rec, autoPlay: false })}
                 onOpenAppModal={() => setActiveModal('app')}
