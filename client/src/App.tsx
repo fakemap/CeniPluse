@@ -150,14 +150,13 @@ function sortItems(items: MediaItem[], sortBy: FilterState['sortBy']): MediaItem
 interface InfiniteSentinelProps {
   onIntersect: () => void;
   isLoading: boolean;
-  label?: string;
   hasMore?: boolean;
 }
 
+// Invisible sentinel — no loading indicator shown to users, purely triggers fetch when in view
 const InfiniteSentinel: React.FC<InfiniteSentinelProps> = ({
   onIntersect,
   isLoading,
-  label = 'titles',
   hasMore = true,
 }) => {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -173,33 +172,15 @@ const InfiniteSentinel: React.FC<InfiniteSentinelProps> = ({
           onIntersect();
         }
       },
-      { rootMargin: '500px' }
+      { rootMargin: '400px' }
     );
 
     observer.observe(el);
     return () => observer.disconnect();
   }, [onIntersect, hasMore, isLoading]);
 
-  return (
-    <div ref={sentinelRef} className="flex flex-col items-center justify-center py-6 pb-12 w-full">
-      {isLoading ? (
-        <div className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-[#141821] border border-[#00E5FF]/40 text-xs font-bold text-[#00E5FF] shadow-lg shadow-[#00E5FF]/10 animate-pulse">
-          <Loader2 className="w-4 h-4 animate-spin text-[#00E5FF]" />
-          <span>Auto-loading more {label}...</span>
-        </div>
-      ) : hasMore ? (
-        <button
-          type="button"
-          onClick={onIntersect}
-          className="text-xs text-[#94A3B8] hover:text-[#00E5FF] font-semibold transition-colors py-2"
-        >
-          Scroll for more {label}
-        </button>
-      ) : (
-        <span className="text-xs text-[#64748B] font-medium">You've reached the end</span>
-      )}
-    </div>
-  );
+  // Invisible spacer — no visible UI, just a trigger point
+  return <div ref={sentinelRef} className="h-4 w-full" aria-hidden="true" />;
 };
 
 export const App: React.FC = () => {
@@ -212,6 +193,13 @@ export const App: React.FC = () => {
   const [publishedCatalog, setPublishedCatalog] = useState<MediaItem[]>([]);
   const [draftedCatalog, setDraftedCatalog] = useState<MediaItem[]>([]);
   const [catalog, setCatalog] = useState<MediaItem[]>(INITIAL_CATALOG);
+  // Items fetched from TMDB pagination — kept separate so they always APPEND at the bottom
+  // of the grid rather than being re-sorted into the middle of the existing list
+  const [tmdbAppended, setTmdbAppended] = useState<Record<string, MediaItem[]>>({
+    movie: [],
+    series: [],
+    animation: [],
+  });
 
   const [isHydratingLive, setIsHydratingLive] = useState(true);
 
@@ -752,6 +740,9 @@ export const App: React.FC = () => {
     setDirectoryHeading('');
     setFilters(DEFAULT_FILTERS);
     setActiveCategoryCard('all');
+    // Clear appended TMDB pages so stale items from a previous session don't bleed in
+    setTmdbAppended({ movie: [], series: [], animation: [] });
+    setTmdbPageByBucket({ movie: 1, series: 1, animation: 1 });
 
     if (route === 'series') setDirectoryTypeFilter('series');
     else if (route === 'animation') setDirectoryTypeFilter('animation');
@@ -793,14 +784,18 @@ export const App: React.FC = () => {
         sortBy: filters.sortBy,
       });
       if (res.items.length > 0) {
-        setCatalog((prev) => {
-          const existingKeys = new Set(
-            prev.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id))
-          );
+        // Collect all existing IDs (catalog + already-appended) to dedupe
+        setTmdbAppended((prev) => {
+          const allAppended = Object.values(prev).flat();
+          const existingKeys = new Set([
+            ...catalog.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)),
+            ...allAppended.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)),
+          ]);
           const fresh = res.items.filter(
             (m) => !existingKeys.has(m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)
           );
-          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+          if (fresh.length === 0) return prev;
+          return { ...prev, [bucket]: [...(prev[bucket] || []), ...fresh] };
         });
         setTmdbPageByBucket((prev) => ({ ...prev, [bucket]: nextPage }));
       }
@@ -1419,13 +1414,26 @@ export const App: React.FC = () => {
                   {directoryHeading || 'Explore All Movies'}
                 </h2>
                 <span className="text-xs font-semibold text-[#94A3B8] tabular-nums">
-                  {spotlightMovies.length} movies loaded
+                  {spotlightMovies.length + (tmdbAppended['movie']?.length || 0)} movies loaded
                 </span>
               </div>
 
               {spotlightMovies.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
                   {spotlightMovies.map((item) => (
+                    <PosterCard
+                      key={item.id}
+                      item={item}
+                      showCast
+                      showDirectoryBadges
+                      inWatchlist={watchlistIds.has(item.id)}
+                      onPlay={handlePlayItem}
+                      onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
+                      onToggleWatchlist={handleToggleWatchlist}
+                    />
+                  ))}
+                  {/* Appended TMDB pages always render at the BOTTOM — never re-sorted into the middle */}
+                  {(tmdbAppended['movie'] || []).map((item) => (
                     <PosterCard
                       key={item.id}
                       item={item}
@@ -1460,7 +1468,6 @@ export const App: React.FC = () => {
               <InfiniteSentinel
                 onIntersect={() => handleLoadMoreFromTmdb('movie')}
                 isLoading={loadingMoreCatalog}
-                label="movies"
               />
             </div>
           </div>
@@ -1540,7 +1547,7 @@ export const App: React.FC = () => {
           <div className="flex items-center justify-between px-4 md:px-0 mb-3 md:mb-4">
             <h1 className="text-base md:text-xl font-extrabold text-[#F8FAFC]">{heading}</h1>
             <span className="text-xs font-semibold text-[#94A3B8]">
-              {directoryItems.length} titles
+              {directoryItems.length + (tmdbAppended[activeRoute === 'animation' ? 'animation' : 'series']?.length || 0)} titles
             </span>
           </div>
 
@@ -1559,6 +1566,19 @@ export const App: React.FC = () => {
                     onToggleWatchlist={handleToggleWatchlist}
                   />
                 ))}
+                {/* Appended TMDB pages always render at the BOTTOM — never re-sorted into the middle */}
+                {(tmdbAppended[activeRoute === 'animation' ? 'animation' : 'series'] || []).map((item) => (
+                  <PosterCard
+                    key={item.id}
+                    item={item}
+                    showCast
+                    showDirectoryBadges
+                    inWatchlist={watchlistIds.has(item.id)}
+                    onPlay={handlePlayItem}
+                    onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
+                    onToggleWatchlist={handleToggleWatchlist}
+                  />
+                ))}
               </div>
 
               <InfiniteSentinel
@@ -1566,7 +1586,6 @@ export const App: React.FC = () => {
                   handleLoadMoreFromTmdb(activeRoute === 'animation' ? 'animation' : 'series')
                 }
                 isLoading={loadingMoreCatalog}
-                label={activeRoute === 'animation' ? 'animation & anime' : 'series & shows'}
               />
             </>
           ) : (
