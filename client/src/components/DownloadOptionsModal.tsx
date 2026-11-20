@@ -230,9 +230,9 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     [resolvedModalSources]
   );
 
-  // Parse runtime seconds from item.duration (e.g. "2h 32m", "152m", "48 min") for accurate size estimates
+  // Parse runtime seconds from item.runtime (e.g. "2h 32m", "152m", "48 min") for accurate size estimates
   const runtimeSec = useMemo(() => {
-    const raw = String(item.duration || '').toLowerCase();
+    const raw = String(item.runtime || '').toLowerCase();
     const hMatch = raw.match(/(\d+)\s*h/);
     const mMatch = raw.match(/(\d+)\s*m/);
     let totalMin = 0;
@@ -244,7 +244,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     }
     if (totalMin <= 0) totalMin = isSeries ? 45 : 110;
     return totalMin * 60;
-  }, [item.duration, isSeries]);
+  }, [item.runtime, isSeries]);
 
   const formatEstBytes = (bytes: number): string => {
     const mb = bytes / (1024 * 1024);
