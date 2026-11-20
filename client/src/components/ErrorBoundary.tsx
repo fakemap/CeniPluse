@@ -21,9 +21,15 @@ export class ErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    const msg = error?.message || '';
+    // For chunk/MIME errors, return a "loading" state so the error UI is suppressed
+    // while componentDidCatch triggers a silent auto-reload
+    if (ErrorBoundary.isChunkLoadError(msg)) {
+      return { hasError: false, errorMessage: msg };
+    }
     return {
       hasError: true,
-      errorMessage: error?.message || 'An unexpected rendering error occurred.',
+      errorMessage: msg || 'An unexpected rendering error occurred.',
     };
   }
 
@@ -39,12 +45,15 @@ export class ErrorBoundary extends React.Component<
     if (ErrorBoundary.isChunkLoadError(msg)) {
       try {
         const lastReload = Number(sessionStorage.getItem('cp_chunk_reload_at') || 0);
-        if (Date.now() - lastReload > 15000) {
+        // Shorter 5s cooldown; reload immediately on first chunk error (no UI flash)
+        if (Date.now() - lastReload > 5000) {
           sessionStorage.setItem('cp_chunk_reload_at', String(Date.now()));
           window.location.reload();
+          return; // skip setState so the error UI never renders
         }
       } catch {
-        // ignore storage errors
+        window.location.reload();
+        return;
       }
     }
   }

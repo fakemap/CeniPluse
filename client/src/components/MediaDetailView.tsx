@@ -1807,13 +1807,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
                     {selectedEpisodeObj && (
                       <div className="rounded-xl bg-[#141821] border border-white/[0.07] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="text-sm sm:text-xs font-extrabold text-[#F8FAFC] leading-snug">
+                        <div className="min-w-0 flex-1 overflow-hidden space-y-1">
+                          <div className="text-sm sm:text-xs font-extrabold text-[#F8FAFC] leading-snug line-clamp-2">
                             S{String(selectedEpisodeObj.seasonNumber).padStart(2, '0')}E
                             {String(selectedEpisodeObj.episodeNumber).padStart(2, '0')} &bull;{' '}
                             {selectedEpisodeObj.title}
                           </div>
-                          <p className="text-xs text-[#94A3B8] line-clamp-3 sm:line-clamp-2 leading-relaxed">
+                          <p className="text-xs text-[#94A3B8] line-clamp-2 leading-relaxed">
                             {selectedEpisodeObj.overview || 'No episode description available.'}
                           </p>
                         </div>
