@@ -85,8 +85,12 @@ export const PosterCard: React.FC<PosterCardProps> = ({
   };
 
   const isVip = item.badge === 'VIP';
-  const isRequestable = Boolean(item.isDraft || item.sources.length === 0);
-  const topRightLabel = isRequestable ? 'Request' : item.badge || item.quality;
+  const isAvailable = Boolean(
+    item.sources.length > 0 || item.tmdbId || item.malId || item.embedUrl || item.hasStreamLinks
+  );
+  const isRequestable = !isAvailable;
+  const cleanBadge = item.badge === 'Request' && isAvailable ? item.quality || 'HD' : item.badge;
+  const topRightLabel = isRequestable ? 'Request' : cleanBadge || item.quality;
 
   return (
     <>

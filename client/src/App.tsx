@@ -625,14 +625,14 @@ export const App: React.FC = () => {
             />
           )}
 
-          {/* 1B) NEWLY HARVESTED MOVIES & SERIES (Browse & Request links to unlock playback) */}
+          {/* 1B) NEWLY ADDED MOVIES & SERIES */}
           {draftedCatalog.length > 0 && (
             <ContentRail
-              title="Newly Added &amp; Upcoming — Request to Watch"
+              title="Newly Added &amp; Trending Releases"
               items={draftedCatalog.slice(0, 24)}
               watchlistIds={watchlistIds}
               onMore={() =>
-                openDirectoryWith('All Newly Added & Requestable Titles', 'all', {
+                openDirectoryWith('All Newly Added Releases', 'all', {
                   sortBy: 'Latest',
                 })
               }

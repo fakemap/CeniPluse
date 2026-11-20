@@ -109,9 +109,9 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
     subtitlesAvailable: ['Original Audio', 'English Dub', 'Spanish Sub', 'French Sub'],
     genres,
     quality: '1080p',
-    badge: 'Request',
-    isDraft: true,
-    hasStreamLinks: false,
+    badge: 'HD',
+    isDraft: false,
+    hasStreamLinks: true,
     runtime: item.type === 'series' ? 'TV Series' : 'Movie',
     poster:
       item.poster ||
@@ -329,10 +329,7 @@ export const backendApi = {
   ): Promise<{
     sources: MediaSource[];
     subtitles: Array<{ label: string; lang: string; url: string }>;
-    mycima?: {
-      watchEmbedUrl: string;
-      seasonDownloads: Array<{ id: string; quality: string; label: string; url: string }>;
-    };
+    seasonPacks?: Array<{ id: string; quality: string; label: string; url: string }>;
   }> {
     try {
       const qs = new URLSearchParams();
@@ -344,15 +341,15 @@ export const backendApi = {
       if (params.year) qs.set('year', String(params.year));
 
       const res = await fetch(`/api/scraper/resolve?${qs.toString()}`, { signal });
-      if (!res.ok) return { sources: [], subtitles: [] };
+      if (!res.ok) return { sources: [], subtitles: [], seasonPacks: [] };
       const data = await res.json();
       return {
         sources: Array.isArray(data.sources) ? data.sources : [],
         subtitles: Array.isArray(data.subtitles) ? data.subtitles : [],
-        mycima: data.mycima,
+        seasonPacks: Array.isArray(data.seasonPacks) ? data.seasonPacks : [],
       };
     } catch {
-      return { sources: [], subtitles: [] };
+      return { sources: [], subtitles: [], seasonPacks: [] };
     }
   },
 

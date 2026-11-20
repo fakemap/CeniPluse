@@ -495,7 +495,7 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
                         }}
                         className="min-h-[44px] px-4 rounded-full bg-[#10B981] text-[#041811] text-xs font-extrabold"
                       >
-                        Switch to VidLink Cloud
+                        Switch to Backup Server
                       </button>
                     )}
                     {activeVideoKey && (

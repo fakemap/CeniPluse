@@ -469,7 +469,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         malId: editMalId.trim() ? Number(editMalId.trim()) : null,
       });
       syncManagingTitle(updated);
-      notify('Saved VidLink TMDB / MyAnimeList (MAL) IDs!');
+      notify('Saved Cloud Stream catalog IDs!');
     } catch (err) {
       notify((err as Error).message);
     }
@@ -1494,7 +1494,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             )}
             <div>
               <label className="text-xs font-semibold text-[#94A3B8]">
-                TMDB ID (Optional — for VidLink Movie/TV Embed)
+                TMDB ID (Optional — enables Cloud Stream for Movie/TV)
               </label>
               <input
                 type="number"
@@ -1507,7 +1507,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             </div>
             <div>
               <label className="text-xs font-semibold text-[#94A3B8]">
-                MyAnimeList ID (Optional — for VidLink Anime Sub/Dub Embed)
+                Anime ID (Optional — enables Anime Sub/Dub Cloud Stream)
               </label>
               <input
                 type="number"
@@ -1661,7 +1661,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </div>
             </div>
 
-            {/* VIDLINK AUTO-EMBED IDS (TMDB ID & MYANIMELIST ID) */}
+            {/* CLOUD STREAM AUTO-EMBED IDS (TMDB ID & MYANIMELIST ID) */}
             <form
               onSubmit={handleSaveTitleIds}
               className="rounded-xl bg-[#0B0D12] border border-[#00E5FF]/25 p-3.5 flex flex-wrap items-end justify-between gap-3"
@@ -1669,7 +1669,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[240px]">
                 <div>
                   <label className="block text-[11px] font-bold text-[#94A3B8]">
-                    TMDB ID (VidLink Movie / TV)
+                    TMDB ID (Cloud Stream Movie / TV)
                   </label>
                   <input
                     type="number"
@@ -1682,7 +1682,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-[#94A3B8]">
-                    MyAnimeList ID (VidLink Anime Sub/Dub)
+                    Anime ID (Cloud Stream Sub/Dub)
                   </label>
                   <input
                     type="number"
@@ -1698,7 +1698,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 type="submit"
                 className="min-h-[36px] px-4 rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF] border border-[#00E5FF]/40 text-[#00E5FF] hover:text-[#071018] text-xs font-extrabold transition-colors"
               >
-                Save VidLink IDs
+                Save Stream IDs
               </button>
             </form>
 

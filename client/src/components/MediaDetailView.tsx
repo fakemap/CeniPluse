@@ -384,14 +384,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         if (res.subtitles && res.subtitles.length > 0) {
           setScrapedSubtitles(res.subtitles);
         }
-        if (res.mycima?.seasonDownloads && res.mycima.seasonDownloads.length > 0) {
-          setMycimaSeasonDownloads(res.mycima.seasonDownloads);
+        if (res.seasonPacks && res.seasonPacks.length > 0) {
+          setMycimaSeasonDownloads(res.seasonPacks);
         }
 
         if (res.sources && res.sources.length > 0) {
           setActiveSources((prev) => {
             const existingCustom = prev.filter(
               (s) =>
+                !s.id.startsWith('srv_') &&
                 !s.id.startsWith('vidlink_wasm_') &&
                 !s.id.startsWith('vidrock_') &&
                 !s.id.startsWith('videasy_') &&
@@ -399,7 +400,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 !s.id.startsWith('vidnest_') &&
                 !s.id.startsWith('cinesu_')
             );
-            const merged = [...existingCustom, ...res.sources];
+            const merged = [...existingCustom, ...res.sources].map((s, idx) => ({
+              ...s,
+              label: `Server ${idx + 1} (${s.quality || '1080p'})`,
+            }));
             return merged;
           });
 
@@ -1142,7 +1146,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           }}
                           className="min-h-[40px] px-4 rounded-full bg-[#10B981] text-[#041811] text-xs font-extrabold"
                         >
-                          Switch to VidLink Cloud Server
+                          Switch to Backup Cloud Server
                         </button>
                       )}
                       {activeVideoKey && (
@@ -1268,7 +1272,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             )}
           </div>
 
-          {/* Ad-Free Native Mirrors & VidLink Fallback Server Switcher Toolbar Below Active Theater Player */}
+          {/* Server Switcher Toolbar Below Active Theater Player */}
           {(canEmbedVidLink || activeSources.length > 0) && (
             <div className="px-4 sm:px-6 lg:px-8 py-3 bg-[#10141D] border-t border-white/[0.08] space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -1281,7 +1285,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
                   {resolvingStreams && activeSources.length === 0 && (
                     <span className="text-xs font-bold text-[#00E5FF] animate-pulse">
-                      Resolving Ad-Free Native Streams...
+                      Resolving High-Speed Servers...
                     </span>
                   )}
 
@@ -1301,7 +1305,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       }`}
                     >
                       <Play className="w-3 h-3 fill-current" />
-                      {src.label || `Native Mirror ${idx + 1}`}
+                      {src.label || `Server ${idx + 1} (${src.quality || '1080p'})`}
                     </button>
                   ))}
 
@@ -1321,7 +1325,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        VidLink Embed (Fallback)
+                        {`Server ${activeSources.length + 1} (Cloud HD)`}
                       </button>
 
                       <button
@@ -1338,13 +1342,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        VidLink (JWPlayer)
+                        {`Server ${activeSources.length + 2} (Backup HD)`}
                       </button>
                     </>
                   )}
                 </div>
 
-                {/* Anime Sub/Dub + MAL ID Switcher & External VTT Subtitles */}
+                {/* Anime Sub/Dub + Anime ID Switcher & External VTT Subtitles */}
                 <div className="flex flex-wrap items-center gap-2">
                   {isAnime && (
                     <>
@@ -1380,7 +1384,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       </div>
 
                       <div className="inline-flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-[#94A3B8]">MAL ID:</span>
+                        <span className="text-[11px] font-bold text-[#94A3B8]">Anime ID:</span>
                         <input
                           type="number"
                           min="1"
@@ -1398,8 +1402,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                               // ignore storage errors
                             }
                           }}
-                          placeholder="TMDB Fallback"
-                          title="Enter MyAnimeList ID to use /anime/{MALid}/{ep}/{subOrDub}?fallback=true, or leave empty to use TMDB fallback"
+                          placeholder="Auto"
+                          title="Enter Anime Catalog ID or leave empty for automatic stream resolution"
                           className="w-28 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
                         />
                       </div>
@@ -1542,8 +1546,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     {canEmbedVidLink && (
                       <span className="px-2.5 py-1 rounded bg-[#00E5FF]/15 border border-[#00E5FF]/40 font-extrabold text-[#00E5FF]">
                         {parsedMalId
-                          ? `VidLink Anime (MAL #${parsedMalId} • ${animeAudioType.toUpperCase()})`
-                          : 'VidLink Cloud Stream Ready'}
+                          ? `Anime Stream Ready (#${parsedMalId} • ${animeAudioType.toUpperCase()})`
+                          : 'Cloud Stream Ready'}
                       </span>
                     )}
                     {loadingSeason && (
@@ -1600,8 +1604,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                             // ignore
                           }
                         }}
-                        placeholder="MAL ID (optional)"
-                        className="w-32 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
+                        placeholder="Anime ID (optional)"
+                        className="w-36 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
                       />
                     </div>
                   )}
@@ -1648,18 +1652,26 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          {(Boolean(selectedEpisodeObj.sources?.length) || canEmbedVidLink) && (
-                            <button
-                              type="button"
-                              onClick={() => handleSelectEpisode(selectedEpisodeObj)}
-                              className="min-h-[38px] px-4 rounded-md bg-[#10B981] hover:brightness-110 text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              Watch Episode
-                            </button>
-                          )}
-
-                          {!selectedEpisodeObj.sources?.length && (
+                          {(Boolean(selectedEpisodeObj.sources?.length) || canEmbedVidLink) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectEpisode(selectedEpisodeObj)}
+                                className="min-h-[38px] px-4 rounded-md bg-[#10B981] hover:brightness-110 text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                Watch Episode
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDownloadModalOpen(true)}
+                                className="min-h-[38px] px-3.5 rounded-md bg-[#1E2430] hover:bg-[#273041] border border-white/10 text-[#F8FAFC] text-xs font-bold inline-flex items-center gap-1.5"
+                              >
+                                <Download className="w-3.5 h-3.5 text-[#00E5FF]" />
+                                Download Episode
+                              </button>
+                            </>
+                          ) : (
                             <button
                               type="button"
                               disabled={requesting}
@@ -1675,7 +1687,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                               ) : (
                                 <Send className="w-3.5 h-3.5" />
                               )}
-                              {hasRequested ? 'Requested' : 'Request Direct Download'}
+                              {hasRequested ? 'Requested' : 'Request Episode Links'}
                             </button>
                           )}
                         </div>
@@ -1741,8 +1753,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                             // ignore
                           }
                         }}
-                        placeholder="MAL ID (optional)"
-                        className="w-32 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
+                        placeholder="Anime ID (optional)"
+                        className="w-36 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
                       />
                     </div>
                   )}
@@ -1753,7 +1765,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     {resolvingStreams && activeSources.length === 0 && (
                       <div className="min-h-[40px] px-4 rounded-lg bg-[#141821] border border-[#00E5FF]/40 text-xs font-bold text-[#00E5FF] inline-flex items-center gap-2 animate-pulse">
                         <Server className="w-3.5 h-3.5" />
-                        <span>Resolving Ad-Free Native Streams...</span>
+                        <span>Resolving High-Speed Servers...</span>
                       </div>
                     )}
 
@@ -1773,7 +1785,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>{src.label || src.quality}</span>
+                        <span>{src.label || `Server ${idx + 1} (${src.quality || '1080p'})`}</span>
                         <span className="text-[#94A3B8] font-normal">({src.size})</span>
                       </button>
                     ))}
@@ -1796,8 +1808,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>
                             {parsedMalId
-                              ? `VidLink Anime (${animeAudioType.toUpperCase()})`
-                              : 'VidLink Embed (Fallback)'}
+                              ? `Server ${activeSources.length + 1} (${animeAudioType.toUpperCase()})`
+                              : `Server ${activeSources.length + 1} (Cloud HD)`}
                           </span>
                           <span className="text-[#94A3B8] font-normal">(1080p Auto)</span>
                         </button>
@@ -1816,7 +1828,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           }`}
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>VidLink JWPlayer</span>
+                          <span>{`Server ${activeSources.length + 2} (Backup HD)`}</span>
                           <span className="text-[#94A3B8] font-normal">(1080p)</span>
                         </button>
                       </>
@@ -1824,24 +1836,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   </div>
                 )}
 
-                {activeSources.length === 0 && !resolvingStreams && (
+                {activeSources.length === 0 && !canEmbedVidLink && !resolvingStreams && (
                   <div className="rounded-xl bg-[#141821] border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="text-xs text-[#94A3B8] leading-relaxed">
-                      {canEmbedVidLink ? (
-                        <>
-                          <strong className="text-[#F8FAFC]">
-                            Instant streaming is active via VidLink Cloud.
-                          </strong>{' '}
-                          Want a direct offline MP4 download mirror added for this title? Submit a
-                          request below!
-                        </>
-                      ) : (
-                        <>
-                          <strong className="text-[#F8FAFC]">Stream link not added yet.</strong>{' '}
-                          Request this movie so our team knows you want to watch it and prioritizes
-                          adding the stream &amp; download mirrors!
-                        </>
-                      )}
+                      <strong className="text-[#F8FAFC]">Stream link not added yet.</strong>{' '}
+                      Request this movie so our team knows you want to watch it and prioritizes
+                      adding the stream &amp; download mirrors!
                       {requestCount > 0 && (
                         <span className="ml-2 px-2 py-0.5 rounded bg-[#FFB800]/15 text-[#FFB800] font-bold tabular-nums">
                           {requestCount} request{requestCount > 1 ? 's' : ''}
@@ -1863,18 +1863,14 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       ) : (
                         <Send className="w-3.5 h-3.5" />
                       )}
-                      {hasRequested
-                        ? 'Requested'
-                        : canEmbedVidLink
-                        ? 'Request Direct Download'
-                        : 'Request This Movie'}
+                      {hasRequested ? 'Requested' : 'Request This Movie'}
                     </button>
                   </div>
                 )}
               </>
             )}
 
-            {/* MyCima Full-Season Download Packs (yousefkotp/Movies-and-Series-Scraper) */}
+            {/* Full-Season Download Packs */}
             {mycimaSeasonDownloads.length > 0 && (
               <div className="rounded-xl bg-[#141821] border border-[#10B981]/35 p-3.5 space-y-2">
                 <div className="text-xs font-extrabold text-[#10B981] flex items-center gap-1.5">
@@ -2109,8 +2105,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           seasons={seasons}
           episodes={episodes}
           selectedSeasonNum={selectedSeasonNum}
+          selectedEpNum={selectedEpNum}
           onSelectSeason={setSelectedSeasonNum}
           activeSources={activeSources}
+          scrapedSubtitles={scrapedSubtitles}
           onClose={() => setDownloadModalOpen(false)}
           onRequestTitle={handleRequestTitle}
           hasRequested={hasRequested}

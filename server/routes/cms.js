@@ -137,12 +137,17 @@ function projectForPublic(title) {
     }
   }
 
-  // Harvested Draft / Unlinked Title — lightweight projection without nested empty episodes
+  // Harvested Draft / Unlinked Title — automatically playable if it has a tmdbId / malId / embedUrl
   const seasonCount = (title.seasons || []).length;
+  const hasAutoStream = Boolean(title.tmdbId || title.malId || title.embedUrl);
   return {
     ...title,
-    isDraft: true,
-    hasStreamLinks: false,
+    badge:
+      hasAutoStream && title.badge === 'Request'
+        ? title.quality || 'HD'
+        : title.badge || title.quality || 'HD',
+    isDraft: !hasAutoStream,
+    hasStreamLinks: hasAutoStream,
     requestCount,
     lastRequestedAt,
     sources: [],
@@ -552,7 +557,7 @@ async function ensureLiveTmdbBootstrap() {
             subtitlesAvailable: ['Original Audio'],
             genres,
             quality: '1080p',
-            badge: 'Request',
+            badge: 'HD',
             runtime: feed.mediaType === 'tv' ? 'TV Series' : 'Movie',
             poster: `${IMG_BASE}/w500${raw.poster_path}`,
             backdrop: raw.backdrop_path

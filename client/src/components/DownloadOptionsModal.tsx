@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Star,
@@ -12,6 +12,7 @@ import {
   Check,
   AlignLeft,
   Video,
+  Loader2,
 } from 'lucide-react';
 import type {
   DownloadRecord,
@@ -20,14 +21,17 @@ import type {
   MediaSource,
   SeasonSummary,
 } from '../types/media';
+import { backendApi } from '../services/api';
 
 interface DownloadOptionsModalProps {
   item: MediaItem;
   seasons: SeasonSummary[];
   episodes: EpisodeItem[];
   selectedSeasonNum: number;
+  selectedEpNum?: number;
   onSelectSeason: (num: number) => void;
   activeSources: MediaSource[];
+  scrapedSubtitles?: Array<{ label: string; lang: string; url: string }>;
   onClose: () => void;
   onRequestTitle: () => void;
   hasRequested: boolean;
@@ -44,10 +48,18 @@ interface QualityOption {
   downloadUrl?: string;
 }
 
-const SUBTITLE_OPTIONS = [
-  { code: 'en', label: 'English', size: '50.85 KB' },
-  { code: 'es', label: 'Español', size: '48.80 KB' },
-  { code: 'hi', label: 'हिन्दी', size: '82.58 KB' },
+interface SubtitleOptionItem {
+  code: string;
+  label: string;
+  size: string;
+  url?: string;
+}
+
+const DEFAULT_SUBTITLE_FALLBACKS: SubtitleOptionItem[] = [
+  { code: 'en', label: 'English', size: '52 KB' },
+  { code: 'es', label: 'Español', size: '49 KB' },
+  { code: 'fr', label: 'Français', size: '51 KB' },
+  { code: 'none', label: 'No Subtitle', size: 'Video Only' },
 ];
 
 export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
@@ -55,8 +67,10 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   seasons,
   episodes,
   selectedSeasonNum,
+  selectedEpNum,
   onSelectSeason,
   activeSources,
+  scrapedSubtitles = [],
   onClose,
   onRequestTitle,
   hasRequested,
@@ -65,7 +79,11 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 }) => {
   const [bulkSelect, setBulkSelect] = useState(false);
   const [selectedEpNums, setSelectedEpNums] = useState<number[]>(() =>
-    episodes[0]?.episodeNumber ? [episodes[0].episodeNumber] : [1]
+    selectedEpNum
+      ? [selectedEpNum]
+      : episodes[0]?.episodeNumber
+      ? [episodes[0].episodeNumber]
+      : [1]
   );
   const [dataSaver, setDataSaver] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<string>('1080P');
@@ -73,6 +91,11 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   const [downloadStatus, setDownloadStatus] = useState<string>('');
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const seasonDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [resolvedModalSources, setResolvedModalSources] = useState<MediaSource[]>(activeSources);
+  const [resolvedModalSubs, setResolvedModalSubs] =
+    useState<Array<{ label: string; lang: string; url: string }>>(scrapedSubtitles);
+  const [loadingLinks, setLoadingLinks] = useState<boolean>(false);
 
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -107,12 +130,6 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [seasonMenuOpen]);
 
-  useEffect(() => {
-    if (episodes.length > 0) {
-      setSelectedEpNums([episodes[0].episodeNumber]);
-    }
-  }, [selectedSeasonNum, episodes]);
-
   const effectiveSeasons: SeasonSummary[] =
     seasons.length > 0
       ? seasons
@@ -130,44 +147,188 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           (_, i) => i + 1
         );
 
+  const primaryEpNum = selectedEpNums[0] || 1;
   const primaryEp =
-    episodes.find((e) => e.episodeNumber === selectedEpNums[0]) || episodes[0] || null;
+    episodes.find((e) => e.episodeNumber === primaryEpNum) || episodes[0] || null;
 
-  const resolvedSources: MediaSource[] =
-    isSeries && primaryEp?.sources?.length ? primaryEp.sources : activeSources;
+  // Dynamically resolve stream & download links for the selected movie or series episode
+  useEffect(() => {
+    if (isSeries && primaryEp?.sources && primaryEp.sources.length > 0) {
+      setResolvedModalSources(primaryEp.sources);
+      return;
+    }
+    if (!isSeries && activeSources.length > 0) {
+      setResolvedModalSources(activeSources);
+      if (scrapedSubtitles.length > 0) {
+        setResolvedModalSubs(scrapedSubtitles);
+      }
+      return;
+    }
 
-  const downloadableSources = resolvedSources.filter((s) => Boolean(s.downloadUrl || s.url));
+    if (!item.tmdbId) return;
 
-  const qualityOptions: QualityOption[] =
-    downloadableSources.length > 0
-      ? downloadableSources.map((s) => ({
-          id: s.id,
-          label: s.quality.toUpperCase(),
-          format: s.type === 'hls' ? 'HLS' : 'MP4',
-          size: s.size || 'HD',
-          recommended: s.quality.toUpperCase().includes('1080') || s.quality.toUpperCase().includes('4K'),
-          downloadUrl: s.downloadUrl || s.url,
-        }))
-      : [
-          { id: '1080p', label: '1080P', format: 'MP4', size: '595.98 MB', recommended: true },
-          { id: '480p', label: '480P', format: 'MP4', size: '185.42 MB' },
-          { id: '360p', label: '360P', format: 'MP4', size: '127.11 MB' },
-        ];
+    let mounted = true;
+    const controller = new AbortController();
+    setLoadingLinks(true);
+
+    backendApi
+      .resolveScrapedStreams(
+        {
+          tmdbId: item.tmdbId,
+          type: item.type,
+          season: isSeries ? selectedSeasonNum : undefined,
+          episode: isSeries ? primaryEpNum : undefined,
+          title: item.title,
+          year: item.year,
+        },
+        controller.signal
+      )
+      .then((res) => {
+        if (!mounted || controller.signal.aborted) return;
+        setLoadingLinks(false);
+        if (res.sources && res.sources.length > 0) {
+          setResolvedModalSources(res.sources);
+        }
+        if (res.subtitles && res.subtitles.length > 0) {
+          setResolvedModalSubs(res.subtitles);
+        }
+      })
+      .catch(() => {
+        if (mounted) setLoadingLinks(false);
+      });
+
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [
+    item.tmdbId,
+    item.type,
+    item.title,
+    item.year,
+    isSeries,
+    selectedSeasonNum,
+    primaryEpNum,
+    primaryEp,
+    activeSources,
+    scrapedSubtitles,
+  ]);
+
+  const downloadableSources = useMemo(
+    () => resolvedModalSources.filter((s) => Boolean(s.downloadUrl || s.url)),
+    [resolvedModalSources]
+  );
+
+  // Build standardized 1080P, 720P, 480P, 360P quality cards backed by real download endpoints
+  const qualityOptions: QualityOption[] = useMemo(() => {
+    const tiers = [
+      { key: '1080', label: '1080P', fallbackSize: '890 MB', recommended: true },
+      { key: '720', label: '720P', fallbackSize: '485 MB', recommended: false },
+      { key: '480', label: '480P', fallbackSize: '240 MB', recommended: false },
+      { key: '360', label: '360P', fallbackSize: '165 MB', recommended: false },
+    ];
+
+    if (downloadableSources.length === 0) {
+      return tiers.map((t) => ({
+        id: `tier_${t.key}`,
+        label: t.label,
+        format: 'MP4',
+        size: t.fallbackSize,
+        recommended: t.recommended,
+      }));
+    }
+
+    // Prefer direct MP4 sources first when matching a resolution tier
+    const findBestSourceForTier = (tierKey: string): MediaSource => {
+      const exactMp4 = downloadableSources.find(
+        (s) => s.type === 'mp4' && s.quality.toLowerCase().includes(tierKey)
+      );
+      if (exactMp4) return exactMp4;
+
+      const exactAny = downloadableSources.find((s) =>
+        s.quality.toLowerCase().includes(tierKey)
+      );
+      if (exactAny) return exactAny;
+
+      const anyMp4 = downloadableSources.find((s) => s.type === 'mp4');
+      return anyMp4 || downloadableSources[0];
+    };
+
+    return tiers.map((t) => {
+      const matched = findBestSourceForTier(t.key);
+      const exactMatch = matched.quality.toLowerCase().includes(t.key);
+      const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
+      const dlWithQuality = rawDl.includes('quality=')
+        ? rawDl.replace(/quality=\d+/i, `quality=${t.key}`)
+        : `${rawDl}&quality=${t.key}`;
+
+      return {
+        id: `q_${t.key}_${matched.id}`,
+        label: t.label,
+        format: 'MP4',
+        size:
+          exactMatch && matched.size && !matched.size.toLowerCase().includes('adaptive')
+            ? matched.size
+            : t.fallbackSize,
+        recommended: t.recommended,
+        downloadUrl: dlWithQuality,
+      };
+    });
+  }, [downloadableSources]);
+
+  // Build subtitle options from real resolved subtitles
+  const subtitleOptions: SubtitleOptionItem[] = useMemo(() => {
+    if (resolvedModalSubs.length === 0) {
+      return DEFAULT_SUBTITLE_FALLBACKS;
+    }
+
+    const out: SubtitleOptionItem[] = [];
+    const seenLabels = new Set<string>();
+
+    for (const sub of resolvedModalSubs) {
+      const cleanLabel = (sub.label || 'English').trim();
+      const lower = cleanLabel.toLowerCase();
+      if (seenLabels.has(lower)) continue;
+      seenLabels.add(lower);
+      out.push({
+        code: `${sub.lang || 'en'}_${out.length}`,
+        label: cleanLabel,
+        size: 'VTT Subtitle',
+        url: sub.url,
+      });
+      if (out.length >= 8) break;
+    }
+
+    out.push({
+      code: 'none',
+      label: 'No Subtitle',
+      size: 'Video Only',
+    });
+
+    return out;
+  }, [resolvedModalSubs]);
+
+  useEffect(() => {
+    if (subtitleOptions.length > 0 && !subtitleOptions.some((s) => s.code === selectedSub)) {
+      setSelectedSub(subtitleOptions[0].code);
+    }
+  }, [subtitleOptions, selectedSub]);
 
   useEffect(() => {
     if (qualityOptions.length > 0) {
       if (dataSaver) {
-        setSelectedQuality(qualityOptions[qualityOptions.length - 1].label);
-      } else {
+        setSelectedQuality('360P');
+      } else if (!qualityOptions.some((q) => q.label === selectedQuality)) {
         setSelectedQuality(qualityOptions[0].label);
       }
     }
-  }, [dataSaver, downloadableSources.length]);
+  }, [dataSaver, qualityOptions, selectedQuality]);
 
   const activeQualityObj =
     qualityOptions.find((q) => q.label === selectedQuality) || qualityOptions[0];
-  const activeSubLabel =
-    SUBTITLE_OPTIONS.find((s) => s.code === selectedSub)?.label || 'English';
+  const activeSubObj =
+    subtitleOptions.find((s) => s.code === selectedSub) || subtitleOptions[0];
+  const activeSubLabel = activeSubObj?.label || 'English';
 
   const handleToggleEpisode = (epNum: number) => {
     if (!bulkSelect) {
@@ -183,67 +344,151 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     );
   };
 
-  const handleStartDownload = () => {
-    if (downloadableSources.length === 0 || !activeQualityObj?.downloadUrl) {
+  const triggerBrowserDownload = (href: string, filename: string) => {
+    const sep = href.includes('?') ? '&' : '?';
+    const finalHref = href.includes('filename=')
+      ? href
+      : `${href}${sep}filename=${encodeURIComponent(filename)}`;
+    const a = document.createElement('a');
+    a.href = finalHref;
+    a.download = filename;
+    a.rel = 'noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleDownloadSubtitleOnly = (sub: SubtitleOptionItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!sub.url) return;
+    const epSuffix = isSeries ? `_S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}` : '';
+    const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeLang = sub.label.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const subFilename = `${safeTitle}${epSuffix}.${safeLang}.vtt`;
+    const dlUrl = sub.url.includes('download=1') ? sub.url : `${sub.url}&download=1`;
+    triggerBrowserDownload(dlUrl, subFilename);
+    setDownloadStatus(`Downloaded ${sub.label} subtitle file (${subFilename}).`);
+  };
+
+  const handleStartDownload = async () => {
+    let targetDownloadUrl = activeQualityObj?.downloadUrl;
+
+    // If user clicked download while links were still resolving, resolve on-demand immediately
+    if (!targetDownloadUrl && item.tmdbId) {
+      setLoadingLinks(true);
+      const res = await backendApi.resolveScrapedStreams({
+        tmdbId: item.tmdbId,
+        type: item.type,
+        season: isSeries ? selectedSeasonNum : undefined,
+        episode: isSeries ? primaryEpNum : undefined,
+        title: item.title,
+        year: item.year,
+      });
+      setLoadingLinks(false);
+      if (res.sources && res.sources.length > 0) {
+        setResolvedModalSources(res.sources);
+        const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
+        const matched =
+          res.sources.find((s) => s.quality.includes(tierKey)) || res.sources[0];
+        const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
+        targetDownloadUrl = `${rawDl}&quality=${tierKey}`;
+      }
+    }
+
+    if (!targetDownloadUrl) {
       onRequestTitle();
       return;
     }
 
+    const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
+
     if (isSeries && bulkSelect && selectedEpNums.length > 1) {
+      setDownloadStatus(
+        `Preparing ${selectedEpNums.length} episode downloads (${activeQualityObj.label})...`
+      );
       let triggered = 0;
-      selectedEpNums.forEach((epNum) => {
+      for (const epNum of selectedEpNums) {
+        let epUrl = '';
         const ep = episodes.find((e) => e.episodeNumber === epNum);
-        const src =
-          ep?.sources?.find((s) => s.quality.toUpperCase() === selectedQuality) ||
-          ep?.sources?.[0];
-        const href = src?.downloadUrl || src?.url;
-        if (!href) return;
+        if (ep?.sources?.length) {
+          const src = ep.sources[0];
+          epUrl = src.downloadUrl || `${src.url}&download=1`;
+        } else if (item.tmdbId) {
+          const resolved = await backendApi.resolveScrapedStreams({
+            tmdbId: item.tmdbId,
+            type: item.type,
+            season: selectedSeasonNum,
+            episode: epNum,
+            title: item.title,
+            year: item.year,
+          });
+          if (resolved.sources?.length) {
+            const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
+            const matched =
+              resolved.sources.find((s) => s.quality.includes(tierKey)) ||
+              resolved.sources[0];
+            epUrl = `${matched.downloadUrl || `${matched.url}&download=1`}&quality=${tierKey}`;
+          }
+        }
+        if (!epUrl) continue;
         triggered++;
+        const epLabel = `S${String(selectedSeasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}`;
+        const fname = `${safeTitle}_${epLabel}_${activeQualityObj.label}.mp4`;
         onRecordDownload({
           id: `dl_${item.id}_s${selectedSeasonNum}e${epNum}_${Date.now()}`,
           mediaId: item.id,
           title: item.title,
           poster: item.poster,
-          quality: src?.quality || selectedQuality,
+          quality: activeQualityObj.label,
           episodeLabel: `S${selectedSeasonNum}:E${epNum}`,
-          url: href,
+          url: epUrl,
           downloadedAt: new Date().toISOString(),
         });
-        window.open(href, '_blank', 'noopener,noreferrer');
-      });
+        triggerBrowserDownload(epUrl, fname);
+      }
       setDownloadStatus(
-        triggered > 0
-          ? `Started ${triggered} episode download(s) (${activeQualityObj.label} • ${activeSubLabel} subtitles).`
-          : 'Selected episodes do not have attached links yet — request them below.'
+        `Started ${triggered} episode download(s) (${activeQualityObj.label} • ${activeSubLabel}).`
       );
       return;
     }
 
-    const epSuffix = isSeries ? `S${selectedSeasonNum}:E${selectedEpNums[0] || 1}` : undefined;
-    const href = activeQualityObj.downloadUrl;
+    const epSuffix = isSeries
+      ? `S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}`
+      : undefined;
+    const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.mp4`;
+
     onRecordDownload({
       id: `dl_${item.id}_${epSuffix || 'movie'}_${Date.now()}`,
       mediaId: item.id,
       title: item.title,
       poster: item.poster,
       quality: activeQualityObj.label,
-      episodeLabel: epSuffix,
-      url: href,
+      episodeLabel: isSeries ? `S${selectedSeasonNum}:E${primaryEpNum}` : undefined,
+      url: targetDownloadUrl,
       downloadedAt: new Date().toISOString(),
     });
 
-    const a = document.createElement('a');
-    a.href = href;
-    a.download = `${item.title}${epSuffix ? `-${epSuffix}` : ''}.mp4`;
-    a.target = '_blank';
-    a.rel = 'noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    triggerBrowserDownload(targetDownloadUrl, videoFilename);
+
+    // If a subtitle track with a real URL is selected, also download the .vtt subtitle after a short delay
+    if (activeSubObj && activeSubObj.url && activeSubObj.code !== 'none') {
+      window.setTimeout(() => {
+        handleDownloadSubtitleOnly(activeSubObj);
+      }, 650);
+    }
+
     setDownloadStatus(
-      `Download queued for ${item.title}${epSuffix ? ` (${epSuffix})` : ''} • ${activeQualityObj.label} • ${activeSubLabel} subtitles.`
+      `Downloading ${item.title}${epSuffix ? ` (${epSuffix})` : ''} in ${activeQualityObj.label}${
+        activeSubObj?.url && activeSubObj.code !== 'none'
+          ? ` + ${activeSubLabel} (.VTT) subtitle`
+          : ''
+      }.`
     );
   };
+
+  const isTitleAvailable = Boolean(
+    downloadableSources.length > 0 || item.tmdbId || item.malId || item.embedUrl
+  );
 
   const displayTitle =
     isSeries && effectiveSeasons.length > 1
@@ -419,7 +664,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
             </div>
           )}
 
-          {/* Section 2: Select Quality */}
+          {/* Section 2: Select Quality (1080P, 720P, 480P, 360P) */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -427,6 +672,12 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                   <Video className="w-4 h-4" />
                 </span>
                 <span className="text-sm font-extrabold text-[#F8FAFC]">Select Quality</span>
+                {loadingLinks && (
+                  <span className="text-xs font-semibold text-[#00E5FF] inline-flex items-center gap-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Syncing formats...
+                  </span>
+                )}
               </div>
 
               <button
@@ -443,7 +694,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {qualityOptions.map((q) => {
                 const isSelected = selectedQuality === q.label;
                 return (
@@ -482,15 +733,27 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 
           {/* Section 3: Select Subtitle */}
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2.5">
-              <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center">
-                <Captions className="w-4 h-4" />
-              </span>
-              <span className="text-sm font-extrabold text-[#F8FAFC]">Select Subtitle</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center">
+                  <Captions className="w-4 h-4" />
+                </span>
+                <span className="text-sm font-extrabold text-[#F8FAFC]">Select Subtitle</span>
+              </div>
+              {activeSubObj?.url && activeSubObj.code !== 'none' && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDownloadSubtitleOnly(activeSubObj, e)}
+                  className="min-h-[30px] px-3 rounded-lg bg-[#161D27] hover:bg-[#1E2736] border border-[#00E5FF]/40 text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  Download {activeSubObj.label} (.VTT)
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {SUBTITLE_OPTIONS.map((sub) => {
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {subtitleOptions.map((sub) => {
                 const isSelected = selectedSub === sub.code;
                 return (
                   <button
@@ -508,8 +771,12 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                         <Check className="w-3 h-3" />
                       </span>
                     )}
-                    <div className="text-sm font-bold text-[#F8FAFC] pr-6">{sub.label}</div>
-                    <div className="text-[11px] text-[#94A3B8] mt-1 tabular-nums">{sub.size}</div>
+                    <div className="text-sm font-bold text-[#F8FAFC] pr-6 truncate">
+                      {sub.label}
+                    </div>
+                    <div className="text-[11px] text-[#94A3B8] mt-1 tabular-nums">
+                      {sub.size}
+                    </div>
                   </button>
                 );
               })}
@@ -525,19 +792,29 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           {/* Action Footer */}
           <div className="pt-2 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
             <span className="text-xs text-[#94A3B8]">
-              {downloadableSources.length > 0
-                ? `${activeQualityObj.label} • ${activeSubLabel} subtitles`
+              {isTitleAvailable
+                ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeSubLabel}`
                 : 'No downloadable mirror linked yet — submit a request so we prioritize this title.'}
             </span>
 
-            {downloadableSources.length > 0 ? (
+            {isTitleAvailable ? (
               <button
                 type="button"
+                disabled={loadingLinks && downloadableSources.length === 0}
                 onClick={handleStartDownload}
-                className="min-h-[44px] px-6 rounded-full bg-[#10B981] hover:brightness-110 text-[#041811] text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 transition-all"
+                className="min-h-[44px] px-6 rounded-full bg-[#10B981] hover:brightness-110 disabled:opacity-60 text-[#041811] text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 transition-all"
               >
-                <Download className="w-4 h-4" />
-                Download Selected ({selectedQuality})
+                {loadingLinks && downloadableSources.length === 0 ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Preparing Download...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Download Selected ({selectedQuality})
+                  </>
+                )}
               </button>
             ) : (
               <button

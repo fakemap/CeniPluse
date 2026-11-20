@@ -106,18 +106,18 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
         {/* Top-left Status Tag */}
         <span
           className={`absolute top-2.5 left-2.5 z-10 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#0B0D12]/80 backdrop-blur-md border border-white/10 text-[10px] font-bold ${
-            item.sources.length > 0 ? 'text-[#10B981]' : 'text-[#FFB800]'
+            item.sources.length > 0 || hasVidLinkSupport(item) ? 'text-[#10B981]' : 'text-[#FFB800]'
           }`}
         >
           {snippetReady && (
             <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />
           )}
-          {item.sources.length > 0
+          {item.sources.length > 0 || hasVidLinkSupport(item)
             ? `${item.quality} • FULL VIDEO`
             : snippetReady
             ? 'PREVIEW'
             : item.trailerYoutubeId
-            ? 'Request • Trailer'
+            ? 'Trailer Preview'
             : 'Request Movie'}
         </span>
 
