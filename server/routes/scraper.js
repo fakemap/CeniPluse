@@ -1176,14 +1176,13 @@ function buildPmtPacket(pmtPid = 0x1000, videoPid = 0x0100, audioPid = 0x0101, c
 
 /**
  * Combines separate Video-only and Audio-only MPEG-TS segments (which often collide on PID 0x0100)
- * into a single valid MPEG-TS stream with Video on PID 0x0100 and Audio on PID 0x0101 + unified PAT/PMT.
+ * into a single tightly interleaved valid MPEG-TS stream (Video PID 0x0100, Audio PID 0x0101)
+ * with unified PAT/PMT so both VLC and Windows Media Player play smoothly in sync.
  */
 function combineVideoAudioTs(vBuf, aBuf, seq = 0) {
   if (!aBuf || aBuf.length === 0) return vBuf;
-  const out = [
-    buildPatPacket(0x1000, seq & 0x0f),
-    buildPmtPacket(0x1000, 0x0100, 0x0101, seq & 0x0f),
-  ];
+
+  const vPkts = [];
   for (let off = 0; off + 188 <= vBuf.length; off += 188) {
     if (vBuf[off] !== 0x47) continue;
     const pid = ((vBuf[off + 1] & 0x1f) << 8) | vBuf[off + 2];
@@ -1191,8 +1190,10 @@ function combineVideoAudioTs(vBuf, aBuf, seq = 0) {
     const pkt = Buffer.from(vBuf.subarray(off, off + 188));
     pkt[1] = (pkt[1] & 0xe0) | 0x01;
     pkt[2] = 0x00;
-    out.push(pkt);
+    vPkts.push(pkt);
   }
+
+  const aPkts = [];
   for (let off = 0; off + 188 <= aBuf.length; off += 188) {
     if (aBuf[off] !== 0x47) continue;
     const pid = ((aBuf[off + 1] & 0x1f) << 8) | aBuf[off + 2];
@@ -1200,7 +1201,24 @@ function combineVideoAudioTs(vBuf, aBuf, seq = 0) {
     const pkt = Buffer.from(aBuf.subarray(off, off + 188));
     pkt[1] = (pkt[1] & 0xe0) | 0x01;
     pkt[2] = 0x01;
-    out.push(pkt);
+    aPkts.push(pkt);
+  }
+
+  // Interleave video and audio packets evenly so mux.js aligns audio & video frames cleanly
+  const out = [
+    buildPatPacket(0x1000, seq & 0x0f),
+    buildPmtPacket(0x1000, 0x0100, 0x0101, seq & 0x0f),
+  ];
+  const ratio = aPkts.length > 0 ? Math.max(1, Math.floor(vPkts.length / aPkts.length)) : vPkts.length;
+  let vi = 0;
+  let ai = 0;
+  while (vi < vPkts.length || ai < aPkts.length) {
+    for (let k = 0; k < ratio && vi < vPkts.length; k++) {
+      out.push(vPkts[vi++]);
+    }
+    if (ai < aPkts.length) {
+      out.push(aPkts[ai++]);
+    }
   }
   return Buffer.concat(out);
 }
@@ -1310,8 +1328,11 @@ async function streamHlsAsVideoDownload({
 
   const transmuxer = new muxjs.mp4.Transmuxer({
     remux: true,
-    keepOriginalTimestamps: true,
+    keepOriginalTimestamps: false,
   });
+  if (typeof transmuxer.setBaseMediaDecodeTime === 'function') {
+    transmuxer.setBaseMediaDecodeTime(0);
+  }
 
   let wroteInit = false;
   const pendingWrites = [];
