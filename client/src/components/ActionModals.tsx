@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, Smartphone, Monitor, Tv2, Wifi } from 'lucide-react';
 import { PremiumModal } from './PremiumModal';
 import type { PremiumPlanId } from './PremiumBenefitIcons';
@@ -40,7 +41,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
     );
   }
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       className="fixed inset-0 z-[110] bg-black/75 backdrop-blur-md flex items-center justify-center p-4"
@@ -160,6 +161,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

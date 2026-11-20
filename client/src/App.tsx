@@ -1206,7 +1206,6 @@ export const App: React.FC = () => {
         onSwitchModal={(next) => setActiveModal(next)}
         onSignIn={async (email) => {
           localStorage.setItem('cinepulse_user', email);
-          setUserEmail(email);
           try {
             const session = await backendApi.loginSession(email);
             if (session?.token) {
@@ -1215,6 +1214,7 @@ export const App: React.FC = () => {
           } catch {
             // Keep local session active if offline
           }
+          setUserEmail(email);
         }}
         onSignOut={() => {
           localStorage.removeItem('cinepulse_user');
