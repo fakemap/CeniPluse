@@ -6,35 +6,8 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
-const { spawn, spawnSync } = require('child_process');
-const { PORT } = require('../config');
+const muxjs = require('mux.js');
 const { isSafeExternalUrl } = require('../middleware/security');
-
-let FFMPEG_PATH = null;
-try {
-  const candidate = require('ffmpeg-static');
-  if (candidate && fs.existsSync(candidate)) {
-    try {
-      fs.chmodSync(candidate, 0o755);
-    } catch {
-      // ignore on Windows
-    }
-    const ver = spawnSync(candidate, ['-version'], { stdio: 'ignore' });
-    if (ver.status === 0) {
-      FFMPEG_PATH = candidate;
-    }
-  }
-} catch {
-  FFMPEG_PATH = null;
-}
-if (!FFMPEG_PATH) {
-  try {
-    const check = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' });
-    if (check.status === 0) FFMPEG_PATH = 'ffmpeg';
-  } catch {
-    // ignore
-  }
-}
 
 const router = express.Router();
 
@@ -956,9 +929,63 @@ function rewriteM3u8Manifest(body, manifestUrl, referer, origin, onlyQuality = '
     .join('\n');
 }
 
+async function parseHlsMediaSegments(playlistBody, playlistUrl, customHeaders) {
+  const lines = playlistBody.split('\n');
+  let aesKey = null;
+  let aesIv = null;
+  let mediaSequence = 0;
+  const keyCache = new Map();
+  const segments = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+      mediaSequence = Number(line.split(':')[1]) || 0;
+    } else if (line.startsWith('#EXT-X-KEY:')) {
+      const method = line.match(/METHOD=([^,]+)/i)?.[1];
+      const uri = line.match(/URI="([^"]+)"/i)?.[1];
+      const ivHex = line.match(/IV=0x([0-9A-Fa-f]+)/i)?.[1];
+      if (method === 'AES-128' && uri) {
+        const keyUrl = resolveRelativeUrl(uri, playlistUrl);
+        if (!keyCache.has(keyUrl)) {
+          keyCache.set(keyUrl, await fetchUpstreamBuffer(keyUrl, customHeaders));
+        }
+        aesKey = keyCache.get(keyUrl);
+        aesIv = ivHex ? Buffer.from(ivHex.padStart(32, '0'), 'hex') : null;
+      } else if (method === 'NONE') {
+        aesKey = null;
+        aesIv = null;
+      }
+    } else if (!line.startsWith('#')) {
+      segments.push({
+        seq: mediaSequence + segments.length,
+        url: resolveRelativeUrl(line, playlistUrl),
+        key: aesKey,
+        iv: aesIv,
+      });
+    }
+  }
+  return segments;
+}
+
+async function fetchDecryptedSegment(seg, customHeaders) {
+  let segBuf = await fetchUpstreamBuffer(seg.url, customHeaders);
+  if (seg.key && seg.key.length === 16) {
+    let ivBuf = seg.iv;
+    if (!ivBuf) {
+      ivBuf = Buffer.alloc(16, 0);
+      ivBuf.writeUInt32BE(seg.seq, 12);
+    }
+    const decipher = crypto.createDecipheriv('aes-128-cbc', seg.key, ivBuf);
+    segBuf = Buffer.concat([decipher.update(segBuf), decipher.final()]);
+  }
+  return segBuf;
+}
+
 /**
- * Streams an HLS (.m3u8) VOD playlist as a single continuous decrypted video download
- * when the user clicks "Download" on an HLS source!
+ * Pure-JavaScript HLS (.m3u8) -> Fragmented MP4 (.mp4) live downloader using mux.js.
+ * Zero child processes, zero external binaries (works reliably on Bot-Hosting.net, Linux, Docker, Windows).
  */
 async function streamHlsAsVideoDownload({
   manifestBody,
@@ -969,114 +996,46 @@ async function streamHlsAsVideoDownload({
   req,
   res,
 }) {
-  // Primary path: let ffmpeg read our local proxy HLS manifest directly so it muxes
-  // BOTH the requested resolution video AND the English audio track into a real .mp4!
-  if (FFMPEG_PATH && req.query.token) {
-    const safeFilename = (filename || 'cinepulse-video.mp4')
-      .replace(/[^a-zA-Z0-9._-]/g, '_')
-      .replace(/\.ts$/i, '.mp4');
-    const qParam = requestedQuality ? `&onlyQuality=${encodeURIComponent(String(requestedQuality))}` : '';
-    const localManifestUrl = `http://127.0.0.1:${PORT}/api/scraper/proxy?token=${encodeURIComponent(
-      String(req.query.token)
-    )}${qParam}`;
-
-    const ffArgs = [
-      '-loglevel',
-      'warning',
-      '-allowed_extensions',
-      'ALL',
-      '-protocol_whitelist',
-      'file,http,https,tcp,tls,crypto',
-      '-i',
-      localManifestUrl,
-      '-map',
-      '0:v:0',
-      '-map',
-      '0:a:m:language:eng?',
-      '-map',
-      '0:a:0?',
-      '-c',
-      'copy',
-      '-bsf:a',
-      'aac_adtstoasc',
-      '-f',
-      'mp4',
-      '-movflags',
-      'frag_keyframe+empty_moov+default_base_moof',
-      'pipe:1',
-    ];
-
-    if (req.query.probe === '1') {
-      const ff = spawn(FFMPEG_PATH, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-      let bytes = 0;
-      let errText = '';
-      ff.stdout.on('data', (c) => {
-        bytes += c.length;
-        if (bytes > 50000) ff.kill('SIGKILL');
-      });
-      ff.stderr.on('data', (c) => {
-        if (errText.length < 1500) errText += c.toString('utf8');
-      });
-      const exitCode = await new Promise((resolve) => {
-        const tm = setTimeout(() => {
-          ff.kill('SIGKILL');
-          resolve('timeout');
-        }, 7000);
-        ff.once('close', (code) => {
-          clearTimeout(tm);
-          resolve(code);
-        });
-      });
-      return res.json({ ffmpegPath: FFMPEG_PATH, port: PORT, exitCode, bytes, stderr: errText });
-    }
-
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-
-    const ff = spawn(FFMPEG_PATH, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    ff.stdout.pipe(res);
-    ff.stderr.on('data', (chunk) => {
-      console.warn('[FFmpeg HLS->MP4]', chunk.toString('utf8').trim());
-    });
-
-    res.on('close', () => {
-      if (!res.writableEnded && !ff.killed) {
-        try {
-          ff.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }
-    });
-
-    await new Promise((resolve) => {
-      ff.once('close', resolve);
-      ff.once('error', resolve);
-    });
-    if (!res.writableEnded) res.end();
-    return;
-  }
-
   let mediaPlaylistBody = manifestBody;
   let mediaPlaylistUrl = manifestUrl;
+  let audioSegments = [];
 
-  // If this is a master playlist (#EXT-X-STREAM-INF), select the best matching variant
+  // If this is a master playlist (#EXT-X-STREAM-INF), select the best matching video variant + English audio track
   if (manifestBody.includes('#EXT-X-STREAM-INF:')) {
     const lines = manifestBody.split('\n');
     const variants = [];
+    const audioTracks = [];
+
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i].trim();
       if (l.startsWith('#EXT-X-STREAM-INF:')) {
-        const resMatch = l.match(/RESOLUTION=\d+x(\d+)/i);
-        const height = resMatch ? Number(resMatch[1]) : 720;
+        const resMatch = l.match(/RESOLUTION=(\d+)x(\d+)/i);
+        const w = resMatch ? Number(resMatch[1]) : 0;
+        const h = resMatch ? Number(resMatch[2]) : 720;
+        const normH =
+          w >= 3800 || h >= 2000
+            ? 2160
+            : w >= 1800 || h >= 1000
+            ? 1080
+            : w >= 1200 || h >= 700
+            ? 720
+            : w >= 800 || h >= 460
+            ? 480
+            : 360;
         const nextLine = (lines[i + 1] || '').trim();
         if (nextLine && !nextLine.startsWith('#')) {
           variants.push({
-            height,
+            height: normH,
             url: resolveRelativeUrl(nextLine, manifestUrl),
+          });
+        }
+      } else if (l.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+        const uri = l.match(/URI="([^"]+)"/i)?.[1];
+        if (uri) {
+          const isEng = /LANGUAGE="en|NAME="English/i.test(l);
+          audioTracks.push({
+            isEng,
+            url: resolveRelativeUrl(uri, manifestUrl),
           });
         }
       }
@@ -1091,137 +1050,96 @@ async function streamHlsAsVideoDownload({
       const buf = await fetchUpstreamBuffer(mediaPlaylistUrl, customHeaders);
       mediaPlaylistBody = buf.toString('utf8');
     }
-  }
 
-  const lines = mediaPlaylistBody.split('\n');
-  let aesKey = null;
-  let aesIv = null;
-  let mediaSequence = 0;
-  const segments = [];
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
-      mediaSequence = Number(line.split(':')[1]) || 0;
-    } else if (line.startsWith('#EXT-X-KEY:')) {
-      const method = line.match(/METHOD=([^,]+)/i)?.[1];
-      const uri = line.match(/URI="([^"]+)"/i)?.[1];
-      const ivHex = line.match(/IV=0x([0-9A-Fa-f]+)/i)?.[1];
-      if (method === 'AES-128' && uri) {
-        const keyUrl = resolveRelativeUrl(uri, mediaPlaylistUrl);
-        aesKey = await fetchUpstreamBuffer(keyUrl, customHeaders);
-        aesIv = ivHex ? Buffer.from(ivHex.padStart(32, '0'), 'hex') : null;
-      } else if (method === 'NONE') {
-        aesKey = null;
-        aesIv = null;
+    if (audioTracks.length > 0) {
+      const chosenAudio = audioTracks.find((a) => a.isEng) || audioTracks[0];
+      try {
+        const aBuf = await fetchUpstreamBuffer(chosenAudio.url, customHeaders);
+        audioSegments = await parseHlsMediaSegments(
+          aBuf.toString('utf8'),
+          chosenAudio.url,
+          customHeaders
+        );
+      } catch {
+        audioSegments = [];
       }
-    } else if (!line.startsWith('#')) {
-      segments.push({
-        seq: mediaSequence + segments.length,
-        url: resolveRelativeUrl(line, mediaPlaylistUrl),
-        key: aesKey,
-        iv: aesIv,
-      });
     }
   }
 
-  const useMp4Remux = Boolean(FFMPEG_PATH);
-  const safeFilename = (filename || (useMp4Remux ? 'cinepulse-video.mp4' : 'cinepulse-video.ts'))
+  const videoSegments = await parseHlsMediaSegments(
+    mediaPlaylistBody,
+    mediaPlaylistUrl,
+    customHeaders
+  );
+
+  const safeFilename = (filename || 'cinepulse-video.mp4')
     .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(useMp4Remux ? /\.ts$/i : /\.mp4$/i, useMp4Remux ? '.mp4' : '.ts');
+    .replace(/\.ts$/i, '.mp4');
 
   res.statusCode = 200;
-  res.setHeader('Content-Type', useMp4Remux ? 'video/mp4' : 'video/mp2t');
+  res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
   res.setHeader('Cache-Control', 'no-store');
 
   let aborted = false;
-  let ff = null;
-
-  if (useMp4Remux) {
-    ff = spawn(
-      FFMPEG_PATH,
-      [
-        '-loglevel',
-        'error',
-        '-f',
-        'mpegts',
-        '-i',
-        'pipe:0',
-        '-c',
-        'copy',
-        '-bsf:a',
-        'aac_adtstoasc',
-        '-f',
-        'mp4',
-        '-movflags',
-        'frag_keyframe+empty_moov+default_base_moof',
-        'pipe:1',
-      ],
-      { stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    ff.stdout.pipe(res);
-    ff.stderr.on('data', (chunk) => {
-      console.warn('[FFmpeg remux]', chunk.toString('utf8').trim());
-    });
-    ff.stdin.on('error', () => {
-      aborted = true;
-    });
-    ff.on('error', () => {
-      aborted = true;
-    });
-  }
-
   res.on('close', () => {
-    if (!res.writableEnded) {
-      aborted = true;
-      if (ff && !ff.killed) {
-        try {
-          ff.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }
+    if (!res.writableEnded) aborted = true;
+  });
+
+  const transmuxer = new muxjs.mp4.Transmuxer({
+    remux: true,
+    keepOriginalTimestamps: true,
+  });
+
+  let wroteInit = false;
+  const pendingWrites = [];
+
+  transmuxer.on('data', (segment) => {
+    if (aborted || res.writableEnded) return;
+    if (!wroteInit && segment.initSegment && segment.initSegment.byteLength > 0) {
+      pendingWrites.push(Buffer.from(segment.initSegment));
+      wroteInit = true;
+    }
+    if (segment.data && segment.data.byteLength > 0) {
+      pendingWrites.push(Buffer.from(segment.data));
     }
   });
 
-  const writeChunk = (buf) =>
-    new Promise((resolve) => {
-      const target = ff ? ff.stdin : res;
-      if (!target || target.destroyed || target.writableEnded) return resolve();
-      const ok = target.write(buf);
-      if (ok) return resolve();
-      target.once('drain', resolve);
-      target.once('close', resolve);
-    });
+  const flushWrites = async () => {
+    while (pendingWrites.length > 0) {
+      if (aborted || res.writableEnded) return;
+      const chunk = pendingWrites.shift();
+      const ok = res.write(chunk);
+      if (!ok) {
+        await new Promise((resolve) => {
+          res.once('drain', resolve);
+          res.once('close', resolve);
+        });
+      }
+    }
+  };
 
-  for (const seg of segments) {
+  for (let i = 0; i < videoSegments.length; i++) {
     if (aborted || res.writableEnded) break;
     try {
-      let segBuf = await fetchUpstreamBuffer(seg.url, customHeaders);
-      if (seg.key && seg.key.length === 16) {
-        let ivBuf = seg.iv;
-        if (!ivBuf) {
-          ivBuf = Buffer.alloc(16, 0);
-          ivBuf.writeUInt32BE(seg.seq, 12);
+      const vBuf = await fetchDecryptedSegment(videoSegments[i], customHeaders);
+      transmuxer.push(new Uint8Array(vBuf));
+      if (audioSegments[i]) {
+        try {
+          const aBuf = await fetchDecryptedSegment(audioSegments[i], customHeaders);
+          transmuxer.push(new Uint8Array(aBuf));
+        } catch {
+          // non-fatal if an audio segment drops
         }
-        const decipher = crypto.createDecipheriv('aes-128-cbc', seg.key, ivBuf);
-        segBuf = Buffer.concat([decipher.update(segBuf), decipher.final()]);
       }
-      await writeChunk(segBuf);
+      transmuxer.flush();
+      await flushWrites();
     } catch {
       // skip faulty segment and continue
     }
   }
 
-  if (ff) {
-    try {
-      if (!ff.stdin.destroyed && !ff.stdin.writableEnded) ff.stdin.end();
-    } catch {
-      // ignore
-    }
-  } else if (!res.writableEnded) {
+  if (!res.writableEnded) {
     res.end();
   }
 }
