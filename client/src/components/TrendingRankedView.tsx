@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { ChevronRight, Play, Star } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, Play, Star, Loader2 } from 'lucide-react';
 import type { MediaItem } from '../types/media';
 import { HoverPreviewCard } from './HoverPreviewCard';
 
@@ -202,6 +202,23 @@ export const TrendingRankedView: React.FC<TrendingRankedViewProps> = ({
     });
   }, [catalog, activeFilter]);
 
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setLimit((n) => Math.min(n + 36, rankedItems.length));
+        }
+      },
+      { rootMargin: '450px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [rankedItems.length, limit]);
+
   return (
     <div className="px-4 md:px-0 space-y-4 pb-8">
       {/* Breadcrumb */}
@@ -263,14 +280,11 @@ export const TrendingRankedView: React.FC<TrendingRankedViewProps> = ({
           </div>
 
           {rankedItems.length > limit && (
-            <div className="pt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setLimit((n) => n + 40)}
-                className="min-h-[44px] px-8 rounded-full bg-[#1E2430] hover:bg-[#00E5FF] hover:text-[#071018] border border-white/10 text-xs font-extrabold text-[#F8FAFC] transition-colors"
-              >
-                Load More ({limit} of {rankedItems.length})
-              </button>
+            <div ref={sentinelRef} className="pt-6 pb-12 flex justify-center">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#141821] border border-[#00E5FF]/40 text-xs font-bold text-[#00E5FF] shadow-lg animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin text-[#00E5FF]" />
+                <span>Loading more titles ({limit} of {rankedItems.length})...</span>
+              </div>
             </div>
           )}
         </>

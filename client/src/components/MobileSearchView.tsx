@@ -136,7 +136,7 @@ export const MobileSearchView: React.FC<MobileSearchViewProps> = ({
             <h2 className="px-4 md:px-0 text-sm font-extrabold text-[#F8FAFC] mb-2.5">
               Trending Searches
             </h2>
-            <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
+            <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
               {trendingDefault.map((item) => (
                 <PosterCard
                   key={item.id}
@@ -167,7 +167,7 @@ export const MobileSearchView: React.FC<MobileSearchViewProps> = ({
           {isSearchingLive && merged.length === 0 ? (
             <GridSkeleton count={9} />
           ) : merged.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
+            <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
               {merged.map((item) => (
                 <PosterCard
                   key={item.id}

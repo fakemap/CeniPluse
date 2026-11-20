@@ -146,6 +146,61 @@ function sortItems(items: MediaItem[], sortBy: FilterState['sortBy']): MediaItem
   }
 }
 
+interface InfiniteSentinelProps {
+  onIntersect: () => void;
+  isLoading: boolean;
+  label?: string;
+  hasMore?: boolean;
+}
+
+const InfiniteSentinel: React.FC<InfiniteSentinelProps> = ({
+  onIntersect,
+  isLoading,
+  label = 'titles',
+  hasMore = true,
+}) => {
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!hasMore || isLoading) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onIntersect();
+        }
+      },
+      { rootMargin: '500px' }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onIntersect, hasMore, isLoading]);
+
+  return (
+    <div ref={sentinelRef} className="flex flex-col items-center justify-center py-6 pb-12 w-full">
+      {isLoading ? (
+        <div className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-[#141821] border border-[#00E5FF]/40 text-xs font-bold text-[#00E5FF] shadow-lg shadow-[#00E5FF]/10 animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin text-[#00E5FF]" />
+          <span>Auto-loading more {label}...</span>
+        </div>
+      ) : hasMore ? (
+        <button
+          type="button"
+          onClick={onIntersect}
+          className="text-xs text-[#94A3B8] hover:text-[#00E5FF] font-semibold transition-colors py-2"
+        >
+          Scroll for more {label}
+        </button>
+      ) : (
+        <span className="text-xs text-[#64748B] font-medium">You've reached the end</span>
+      )}
+    </div>
+  );
+};
+
 export const App: React.FC = () => {
   const initialUrl = useMemo(() => readUrlState(), []);
   const [activeRoute, setActiveRoute] = useState<NavRoute>(initialUrl.route);
@@ -1397,26 +1452,11 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              <div className="flex justify-center pt-7 pb-4">
-                <button
-                  type="button"
-                  disabled={loadingMoreCatalog}
-                  onClick={() => handleLoadMoreFromTmdb('movie')}
-                  className="min-h-[44px] px-6 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-[#00E5FF]/40 text-xs sm:text-sm font-extrabold text-[#00E5FF] inline-flex items-center gap-2 transition-colors disabled:opacity-60"
-                >
-                  {loadingMoreCatalog ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading More Movies...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Load More Movies (Page {(tmdbPageByBucket.movie || 1) + 1})
-                    </>
-                  )}
-                </button>
-              </div>
+              <InfiniteSentinel
+                onIntersect={() => handleLoadMoreFromTmdb('movie')}
+                isLoading={loadingMoreCatalog}
+                label="movies"
+              />
             </div>
           </div>
         </div>
@@ -1516,31 +1556,13 @@ export const App: React.FC = () => {
                 ))}
               </div>
 
-              <div className="flex justify-center pt-7 pb-4">
-                <button
-                  type="button"
-                  disabled={loadingMoreCatalog}
-                  onClick={() =>
-                    handleLoadMoreFromTmdb(activeRoute === 'animation' ? 'animation' : 'series')
-                  }
-                  className="min-h-[44px] px-6 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-[#00E5FF]/40 text-xs sm:text-sm font-extrabold text-[#00E5FF] inline-flex items-center gap-2 transition-colors disabled:opacity-60"
-                >
-                  {loadingMoreCatalog ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading More {activeRoute === 'animation' ? 'Animation' : 'Series'}...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Load More {activeRoute === 'animation' ? 'Animation' : 'Series'} (Page{' '}
-                      {(tmdbPageByBucket[activeRoute === 'animation' ? 'animation' : 'series'] ||
-                        1) + 1}
-                      )
-                    </>
-                  )}
-                </button>
-              </div>
+              <InfiniteSentinel
+                onIntersect={() =>
+                  handleLoadMoreFromTmdb(activeRoute === 'animation' ? 'animation' : 'series')
+                }
+                isLoading={loadingMoreCatalog}
+                label={activeRoute === 'animation' ? 'animation & anime' : 'series & shows'}
+              />
             </>
           ) : (
             <div className="mx-4 md:mx-0 rounded-2xl bg-[#141821] border border-white/[0.06] py-14 px-6 text-center">

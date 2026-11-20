@@ -43,6 +43,15 @@
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  transform: translateZ(0);
+}
+
+/* Offscreen grid card rendering optimization for 60-120fps smooth scrolling */
+.card-content-visibility {
+  content-visibility: auto;
+  contain-intrinsic-size: 140px 210px;
 }
 
 /* Subtle custom scrollbar for vertical desktop scroll */

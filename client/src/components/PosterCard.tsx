@@ -21,7 +21,7 @@ function isFineDesktopPointer(): boolean {
   );
 }
 
-export const PosterCard: React.FC<PosterCardProps> = ({
+const PosterCardComponent: React.FC<PosterCardProps> = ({
   item,
   showCast = false,
   showDirectoryBadges = true,
@@ -104,7 +104,7 @@ export const PosterCard: React.FC<PosterCardProps> = ({
         onMouseLeave={handleMouseLeave}
         onClick={() => onSelect(item)}
         onKeyDown={handleKeyDown}
-        className="group cursor-pointer select-none flex flex-col rounded-xl active:scale-[0.97] transition-transform duration-150"
+        className="group cursor-pointer select-none flex flex-col rounded-xl active:scale-[0.97] transition-transform duration-150 card-content-visibility"
       >
         {/* Strict Vertical 2:3 Poster Frame (iOS Safari GPU-safe: zero opacity-0 trap, zero per-card backdrop-blur) */}
         <div ref={posterFrameRef} className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#141821] border border-white/[0.08] lg:group-hover:border-[#00E5FF]/50 lg:group-hover:shadow-[0_12px_32px_rgba(0,0,0,0.65)] transition-colors duration-200">
@@ -197,3 +197,5 @@ export const PosterCard: React.FC<PosterCardProps> = ({
     </>
   );
 };
+
+export const PosterCard = React.memo(PosterCardComponent);
