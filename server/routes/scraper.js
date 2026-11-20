@@ -6,7 +6,18 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { isSafeExternalUrl } = require('../middleware/security');
+
+let FFMPEG_PATH = null;
+try {
+  const candidate = require('ffmpeg-static');
+  if (candidate && fs.existsSync(candidate)) {
+    FFMPEG_PATH = candidate;
+  }
+} catch {
+  FFMPEG_PATH = null;
+}
 
 const router = express.Router();
 
@@ -958,19 +969,70 @@ async function streamHlsAsVideoDownload({
     }
   }
 
-  const safeFilename = (filename || 'cinepulse-video.ts')
+  const useMp4Remux = Boolean(FFMPEG_PATH);
+  const safeFilename = (filename || (useMp4Remux ? 'cinepulse-video.mp4' : 'cinepulse-video.ts'))
     .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/\.mp4$/i, '.ts');
+    .replace(useMp4Remux ? /\.ts$/i : /\.mp4$/i, useMp4Remux ? '.mp4' : '.ts');
 
   res.statusCode = 200;
-  res.setHeader('Content-Type', 'video/mp2t');
+  res.setHeader('Content-Type', useMp4Remux ? 'video/mp4' : 'video/mp2t');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
   res.setHeader('Cache-Control', 'no-store');
 
   let aborted = false;
+  let ff = null;
+
+  if (useMp4Remux) {
+    ff = spawn(
+      FFMPEG_PATH,
+      [
+        '-loglevel',
+        'error',
+        '-f',
+        'mpegts',
+        '-i',
+        'pipe:0',
+        '-c',
+        'copy',
+        '-bsf:a',
+        'aac_adtstoasc',
+        '-f',
+        'mp4',
+        '-movflags',
+        'frag_keyframe+empty_moov+default_base_moof',
+        'pipe:1',
+      ],
+      { stdio: ['pipe', 'pipe', 'ignore'] }
+    );
+    ff.stdout.pipe(res);
+    ff.stdin.on('error', () => {
+      aborted = true;
+    });
+    ff.on('error', () => {
+      aborted = true;
+    });
+  }
+
   req.on('close', () => {
     aborted = true;
+    if (ff && !ff.killed) {
+      try {
+        ff.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+    }
   });
+
+  const writeChunk = (buf) =>
+    new Promise((resolve) => {
+      const target = ff ? ff.stdin : res;
+      if (!target || target.destroyed || target.writableEnded) return resolve();
+      const ok = target.write(buf);
+      if (ok) return resolve();
+      target.once('drain', resolve);
+      target.once('close', resolve);
+    });
 
   for (const seg of segments) {
     if (aborted || res.writableEnded) break;
@@ -985,13 +1047,19 @@ async function streamHlsAsVideoDownload({
         const decipher = crypto.createDecipheriv('aes-128-cbc', seg.key, ivBuf);
         segBuf = Buffer.concat([decipher.update(segBuf), decipher.final()]);
       }
-      res.write(segBuf);
+      await writeChunk(segBuf);
     } catch {
       // skip faulty segment and continue
     }
   }
 
-  if (!res.writableEnded) {
+  if (ff) {
+    try {
+      if (!ff.stdin.destroyed && !ff.stdin.writableEnded) ff.stdin.end();
+    } catch {
+      // ignore
+    }
+  } else if (!res.writableEnded) {
     res.end();
   }
 }

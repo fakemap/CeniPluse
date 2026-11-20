@@ -301,7 +301,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       return {
         id: `q_${h}_${matched.id}`,
         label,
-        format: matched.type === 'hls' ? 'TS' : 'MP4',
+        format: 'MP4',
         size: displaySize,
         recommended: idx === 0,
         downloadUrl: dlWithQuality,
@@ -486,9 +486,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       const srcUrl = src.downloadUrl || src.url;
       if (!srcUrl) continue;
       const srcType: 'mp4' | 'hls' = src.type === 'hls' ? 'hls' : 'mp4';
-      const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.${
-        srcType === 'hls' ? 'ts' : 'mp4'
-      }`;
+      const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.mp4`;
 
       try {
         await downloadVideoWithProgress({
