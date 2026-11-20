@@ -226,7 +226,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setTab(initialTab);
   }, [initialTab]);
 
+  const hasToken = () =>
+    typeof window !== 'undefined' && Boolean(localStorage.getItem('cinepulse_token'));
+
   useEffect(() => {
+    if (!hasToken()) {
+      setAuthState('signin');
+      return;
+    }
     if (tab === 'draft' || tab === 'published') {
       setVisibleCount(25);
       loadInventory();
@@ -245,29 +252,34 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Initial load & 60-second background refresh so 5-minute auto-fetch and user requests stay live
   useEffect(() => {
+    if (!hasToken()) {
+      setAuthState('signin');
+      return;
+    }
     backendApi
       .fetchCmsAdminTitles('all')
       .then((d) => {
         setAuthState('ok');
         setSummary(d.summary);
+        loadHarvestCategories().catch(() => {});
+        loadRequests().catch(() => {});
       })
       .catch((err) => {
         const msg = (err as Error).message;
         if (msg === 'AUTH_REQUIRED') setAuthState('signin');
         else if (msg === 'ADMIN_FORBIDDEN') setAuthState('forbidden');
       });
-    loadHarvestCategories().catch(() => {});
-    loadRequests().catch(() => {});
 
     const timer = window.setInterval(() => {
+      if (!hasToken()) return;
       backendApi
         .fetchCmsAdminTitles('all')
         .then((d) => {
           setAuthState('ok');
           setSummary(d.summary);
+          loadRequests().catch(() => {});
         })
         .catch(() => {});
-      loadRequests().catch(() => {});
     }, 60 * 1000);
     return () => window.clearInterval(timer);
   }, [userEmail]);
