@@ -22,6 +22,11 @@ import type {
   SeasonSummary,
 } from '../types/media';
 import { backendApi } from '../services/api';
+import {
+  downloadSubtitleFile,
+  downloadVideoWithProgress,
+  type DownloadProgress,
+} from '../utils/downloader';
 
 interface DownloadOptionsModalProps {
   item: MediaItem;
@@ -46,6 +51,7 @@ interface QualityOption {
   size: string;
   recommended?: boolean;
   downloadUrl?: string;
+  sourceType?: 'mp4' | 'hls';
 }
 
 interface SubtitleOptionItem {
@@ -89,6 +95,11 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   const [selectedQuality, setSelectedQuality] = useState<string>('1080P');
   const [selectedSub, setSelectedSub] = useState<string>('en');
   const [downloadStatus, setDownloadStatus] = useState<string>('');
+  const [downloadError, setDownloadError] = useState<string>('');
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [downloadingVideo, setDownloadingVideo] = useState<boolean>(false);
+  const [downloadingSub, setDownloadingSub] = useState<boolean>(false);
+  const downloadAbortRef = useRef<AbortController | null>(null);
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const seasonDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -265,13 +276,14 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       return {
         id: `q_${t.key}_${matched.id}`,
         label: t.label,
-        format: 'MP4',
+        format: matched.type === 'hls' ? 'TS / MP4' : 'MP4',
         size:
           exactMatch && matched.size && !matched.size.toLowerCase().includes('adaptive')
             ? matched.size
             : t.fallbackSize,
         recommended: t.recommended,
         downloadUrl: dlWithQuality,
+        sourceType: matched.type === 'hls' ? 'hls' : 'mp4',
       };
     });
   }, [downloadableSources]);
@@ -344,146 +356,179 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     );
   };
 
-  const triggerBrowserDownload = (href: string, filename: string) => {
-    const sep = href.includes('?') ? '&' : '?';
-    const finalHref = href.includes('filename=')
-      ? href
-      : `${href}${sep}filename=${encodeURIComponent(filename)}`;
-    const a = document.createElement('a');
-    a.href = finalHref;
-    a.download = filename;
-    a.rel = 'noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  useEffect(() => {
+    return () => {
+      downloadAbortRef.current?.abort();
+    };
+  }, []);
+
+  const handleCancelDownload = () => {
+    downloadAbortRef.current?.abort();
+    downloadAbortRef.current = null;
+    setDownloadingVideo(false);
+    setDownloadProgress(null);
+    setDownloadStatus('Download cancelled.');
   };
 
-  const handleDownloadSubtitleOnly = (sub: SubtitleOptionItem, e?: React.MouseEvent) => {
+  const handleDownloadSubtitleOnly = async (sub: SubtitleOptionItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!sub.url) return;
-    const epSuffix = isSeries ? `_S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}` : '';
-    const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeLang = sub.label.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const subFilename = `${safeTitle}${epSuffix}.${safeLang}.vtt`;
-    const dlUrl = sub.url.includes('download=1') ? sub.url : `${sub.url}&download=1`;
-    triggerBrowserDownload(dlUrl, subFilename);
-    setDownloadStatus(`Downloaded ${sub.label} subtitle file (${subFilename}).`);
+    if (!sub.url) {
+      setDownloadError('Subtitle track is not available for this title yet.');
+      return;
+    }
+    setDownloadError('');
+    setDownloadingSub(true);
+    try {
+      const epSuffix = isSeries
+        ? `_S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}`
+        : '';
+      const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const safeLang = sub.label.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const subFilename = `${safeTitle}${epSuffix}.${safeLang}.vtt`;
+      await downloadSubtitleFile(sub.url, subFilename);
+      setDownloadStatus(`Saved ${sub.label} subtitle (${subFilename}) to your downloads.`);
+    } catch (err) {
+      setDownloadError((err as Error).message || 'Could not download subtitle file.');
+    } finally {
+      setDownloadingSub(false);
+    }
   };
 
   const handleStartDownload = async () => {
-    let targetDownloadUrl = activeQualityObj?.downloadUrl;
+    if (downloadingVideo) return;
+    setDownloadError('');
+    setDownloadStatus('');
+    setDownloadProgress(null);
 
-    // If user clicked download while links were still resolving, resolve on-demand immediately
-    if (!targetDownloadUrl && item.tmdbId) {
+    let candidateSources = [...downloadableSources];
+    let candidateSubs = [...resolvedModalSubs];
+
+    // If user clicked download before links finished resolving, resolve on-demand immediately
+    if (candidateSources.length === 0 && item.tmdbId) {
       setLoadingLinks(true);
-      const res = await backendApi.resolveScrapedStreams({
-        tmdbId: item.tmdbId,
-        type: item.type,
-        season: isSeries ? selectedSeasonNum : undefined,
-        episode: isSeries ? primaryEpNum : undefined,
-        title: item.title,
-        year: item.year,
-      });
-      setLoadingLinks(false);
-      if (res.sources && res.sources.length > 0) {
-        setResolvedModalSources(res.sources);
-        const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
-        const matched =
-          res.sources.find((s) => s.quality.includes(tierKey)) || res.sources[0];
-        const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
-        targetDownloadUrl = `${rawDl}&quality=${tierKey}`;
+      try {
+        const res = await backendApi.resolveScrapedStreams({
+          tmdbId: item.tmdbId,
+          type: item.type,
+          season: isSeries ? selectedSeasonNum : undefined,
+          episode: isSeries ? primaryEpNum : undefined,
+          title: item.title,
+          year: item.year,
+        });
+        if (res.sources && res.sources.length > 0) {
+          candidateSources = res.sources;
+          setResolvedModalSources(res.sources);
+        }
+        if (res.subtitles && res.subtitles.length > 0) {
+          candidateSubs = res.subtitles;
+          setResolvedModalSubs(res.subtitles);
+        }
+      } finally {
+        setLoadingLinks(false);
       }
     }
 
-    if (!targetDownloadUrl) {
-      onRequestTitle();
+    if (candidateSources.length === 0) {
+      // Even if video servers are temporarily busy, still download the selected subtitle if available
+      if (activeSubObj && activeSubObj.url && activeSubObj.code !== 'none') {
+        await handleDownloadSubtitleOnly(activeSubObj);
+      }
+      setDownloadError(
+        'Direct video download mirrors are temporarily busy for this title. Please try again in a moment or switch to another quality.'
+      );
       return;
     }
 
     const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const epSuffix = isSeries
+      ? `S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}`
+      : undefined;
+    const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
 
-    if (isSeries && bulkSelect && selectedEpNums.length > 1) {
-      setDownloadStatus(
-        `Preparing ${selectedEpNums.length} episode downloads (${activeQualityObj.label})...`
-      );
-      let triggered = 0;
-      for (const epNum of selectedEpNums) {
-        let epUrl = '';
-        const ep = episodes.find((e) => e.episodeNumber === epNum);
-        if (ep?.sources?.length) {
-          const src = ep.sources[0];
-          epUrl = src.downloadUrl || `${src.url}&download=1`;
-        } else if (item.tmdbId) {
-          const resolved = await backendApi.resolveScrapedStreams({
-            tmdbId: item.tmdbId,
-            type: item.type,
-            season: selectedSeasonNum,
-            episode: epNum,
-            title: item.title,
-            year: item.year,
-          });
-          if (resolved.sources?.length) {
-            const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
-            const matched =
-              resolved.sources.find((s) => s.quality.includes(tierKey)) ||
-              resolved.sources[0];
-            epUrl = `${matched.downloadUrl || `${matched.url}&download=1`}&quality=${tierKey}`;
-          }
-        }
-        if (!epUrl) continue;
-        triggered++;
-        const epLabel = `S${String(selectedSeasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}`;
-        const fname = `${safeTitle}_${epLabel}_${activeQualityObj.label}.mp4`;
+    // Order candidate servers: preferred quality match first, then fallback servers
+    const orderedSources = [
+      ...candidateSources.filter((s) => s.quality.toLowerCase().includes(tierKey)),
+      ...candidateSources.filter((s) => !s.quality.toLowerCase().includes(tierKey)),
+    ];
+
+    const controller = new AbortController();
+    downloadAbortRef.current = controller;
+    setDownloadingVideo(true);
+
+    // Download selected subtitle first (tiny ~50 KB file, instant)
+    const subToFetch =
+      activeSubObj && activeSubObj.url && activeSubObj.code !== 'none'
+        ? activeSubObj
+        : candidateSubs[0] && selectedSub !== 'none'
+        ? { code: 'sub_0', label: candidateSubs[0].label, size: 'VTT', url: candidateSubs[0].url }
+        : null;
+
+    if (subToFetch?.url) {
+      const subName = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}.${subToFetch.label.replace(
+        /[^a-zA-Z0-9._-]/g,
+        '_'
+      )}.vtt`;
+      downloadSubtitleFile(subToFetch.url, subName).catch(() => {
+        // non-fatal if subtitle fails while video succeeds
+      });
+    }
+
+    let lastErr = '';
+    let succeeded = false;
+
+    for (const src of orderedSources) {
+      if (controller.signal.aborted) break;
+      const srcUrl = src.downloadUrl || src.url;
+      if (!srcUrl) continue;
+      const srcType: 'mp4' | 'hls' = src.type === 'hls' ? 'hls' : 'mp4';
+      const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.${
+        srcType === 'hls' ? 'ts' : 'mp4'
+      }`;
+
+      try {
+        await downloadVideoWithProgress({
+          url: srcUrl,
+          sourceType: srcType,
+          quality: activeQualityObj.label,
+          filename: videoFilename,
+          onProgress: (p) => setDownloadProgress(p),
+          signal: controller.signal,
+        });
+
         onRecordDownload({
-          id: `dl_${item.id}_s${selectedSeasonNum}e${epNum}_${Date.now()}`,
+          id: `dl_${item.id}_${epSuffix || 'movie'}_${Date.now()}`,
           mediaId: item.id,
           title: item.title,
           poster: item.poster,
           quality: activeQualityObj.label,
-          episodeLabel: `S${selectedSeasonNum}:E${epNum}`,
-          url: epUrl,
+          episodeLabel: isSeries ? `S${selectedSeasonNum}:E${primaryEpNum}` : undefined,
+          url: srcUrl,
           downloadedAt: new Date().toISOString(),
         });
-        triggerBrowserDownload(epUrl, fname);
+
+        setDownloadStatus(
+          `Saved ${videoFilename}${
+            subToFetch ? ` + ${subToFetch.label} (.VTT) subtitle` : ''
+          } to your downloads.`
+        );
+        succeeded = true;
+        break;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          break;
+        }
+        lastErr = (err as Error).message || 'Server error';
       }
-      setDownloadStatus(
-        `Started ${triggered} episode download(s) (${activeQualityObj.label} • ${activeSubLabel}).`
+    }
+
+    setDownloadingVideo(false);
+    downloadAbortRef.current = null;
+    if (!succeeded && !controller.signal.aborted) {
+      setDownloadProgress(null);
+      setDownloadError(
+        `Could not download from available servers (${lastErr || 'connection failed'}). Please try again.`
       );
-      return;
     }
-
-    const epSuffix = isSeries
-      ? `S${String(selectedSeasonNum).padStart(2, '0')}E${String(primaryEpNum).padStart(2, '0')}`
-      : undefined;
-    const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.mp4`;
-
-    onRecordDownload({
-      id: `dl_${item.id}_${epSuffix || 'movie'}_${Date.now()}`,
-      mediaId: item.id,
-      title: item.title,
-      poster: item.poster,
-      quality: activeQualityObj.label,
-      episodeLabel: isSeries ? `S${selectedSeasonNum}:E${primaryEpNum}` : undefined,
-      url: targetDownloadUrl,
-      downloadedAt: new Date().toISOString(),
-    });
-
-    triggerBrowserDownload(targetDownloadUrl, videoFilename);
-
-    // If a subtitle track with a real URL is selected, also download the .vtt subtitle after a short delay
-    if (activeSubObj && activeSubObj.url && activeSubObj.code !== 'none') {
-      window.setTimeout(() => {
-        handleDownloadSubtitleOnly(activeSubObj);
-      }, 650);
-    }
-
-    setDownloadStatus(
-      `Downloading ${item.title}${epSuffix ? ` (${epSuffix})` : ''} in ${activeQualityObj.label}${
-        activeSubObj?.url && activeSubObj.code !== 'none'
-          ? ` + ${activeSubLabel} (.VTT) subtitle`
-          : ''
-      }.`
-    );
   };
 
   const isTitleAvailable = Boolean(
@@ -743,11 +788,16 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               {activeSubObj?.url && activeSubObj.code !== 'none' && (
                 <button
                   type="button"
+                  disabled={downloadingSub}
                   onClick={(e) => handleDownloadSubtitleOnly(activeSubObj, e)}
-                  className="min-h-[30px] px-3 rounded-lg bg-[#161D27] hover:bg-[#1E2736] border border-[#00E5FF]/40 text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1.5 transition-colors"
+                  className="min-h-[30px] px-3 rounded-lg bg-[#161D27] hover:bg-[#1E2736] disabled:opacity-60 border border-[#00E5FF]/40 text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1.5 transition-colors"
                 >
-                  <Download className="w-3 h-3" />
-                  Download {activeSubObj.label} (.VTT)
+                  {downloadingSub ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Download className="w-3 h-3" />
+                  )}
+                  {downloadingSub ? 'Saving Subtitle...' : `Download ${activeSubObj.label} (.VTT)`}
                 </button>
               )}
             </div>
@@ -783,7 +833,34 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
             </div>
           </div>
 
-          {downloadStatus && (
+          {downloadingVideo && downloadProgress && (
+            <div className="p-3.5 rounded-xl bg-[#161D27] border border-[#00E5FF]/35 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-bold text-[#00E5FF] truncate">{downloadProgress.label}</span>
+                <button
+                  type="button"
+                  onClick={handleCancelDownload}
+                  className="px-2.5 py-1 rounded-md bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-[11px] shrink-0"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="h-2 w-full rounded-full bg-[#0B0D12] overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#00E5FF] to-[#10B981] transition-all duration-200"
+                  style={{ width: `${Math.max(3, downloadProgress.percent)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {downloadError && (
+            <div className="px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs font-bold text-rose-200">
+              {downloadError}
+            </div>
+          )}
+
+          {downloadStatus && !downloadError && (
             <div className="px-3.5 py-2.5 rounded-xl bg-[#10B981]/15 border border-[#10B981]/35 text-xs font-bold text-[#10B981]">
               {downloadStatus}
             </div>
@@ -800,11 +877,16 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
             {isTitleAvailable ? (
               <button
                 type="button"
-                disabled={loadingLinks && downloadableSources.length === 0}
+                disabled={downloadingVideo || (loadingLinks && downloadableSources.length === 0)}
                 onClick={handleStartDownload}
                 className="min-h-[44px] px-6 rounded-full bg-[#10B981] hover:brightness-110 disabled:opacity-60 text-[#041811] text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 transition-all"
               >
-                {loadingLinks && downloadableSources.length === 0 ? (
+                {downloadingVideo ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {downloadProgress ? `Downloading ${downloadProgress.percent}%...` : 'Downloading...'}
+                  </>
+                ) : loadingLinks && downloadableSources.length === 0 ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Preparing Download...

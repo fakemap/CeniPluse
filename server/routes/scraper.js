@@ -126,7 +126,7 @@ function formatBytes(bytesInput) {
 
 async function probeMp4UrlReachable(rawUrl, referer, origin) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2200);
+  const timer = setTimeout(() => controller.abort(), 3500);
   try {
     const res = await fetch(rawUrl, {
       method: 'GET',
@@ -145,9 +145,9 @@ async function probeMp4UrlReachable(rawUrl, referer, origin) {
     const totalBytes = res.headers.get('content-range')
       ? Number(String(res.headers.get('content-range')).split('/')[1] || 0)
       : Number(res.headers.get('content-length') || 0);
-    return { ok, totalBytes };
+    return { ok, status: res.status, totalBytes };
   } catch {
-    return { ok: false, totalBytes: 0 };
+    return { ok: false, status: 0, totalBytes: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -203,7 +203,7 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
       });
 
-      // Verify first MP4 quality is reachable (filters out expired/rate-limited 428/429 vault links)
+      // Verify first MP4 quality is reachable; on timeout (status 0) keep it rather than dropping all links
       let vaultReachable = true;
       let probedBytes = 0;
       if (entries.length > 0) {
@@ -219,7 +219,8 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
             firstVal.headers?.origin ||
             (isHakuna ? 'https://filmboom.top' : UPSTREAM_A_ORIGIN);
           const probe = await probeMp4UrlReachable(String(firstVal.url), testRef, testOrig);
-          vaultReachable = probe.ok;
+          // Only drop if upstream explicitly rejected with 404/410/428/429 (not on slow timeout)
+          vaultReachable = probe.ok || probe.status === 0;
           probedBytes = probe.totalBytes;
         }
       }
@@ -972,6 +973,10 @@ async function streamHlsAsVideoDownload({
 
 router.get('/proxy', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'Content-Length, Content-Range, Accept-Ranges, Content-Disposition'
+  );
 
   let rawUrl = '';
   let referer = UPSTREAM_A_REFERER;
@@ -1045,11 +1050,29 @@ router.get('/proxy', async (req, res) => {
       return res.send(body);
     }
 
+    if (isSubtitle) {
+      const chunks = [];
+      for await (const chunk of upstream) chunks.push(chunk);
+      let text = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
+      if (!text.trimStart().startsWith('WEBVTT')) {
+        // Convert SRT timecodes (00:00:01,500 --> 00:00:03,000) to valid WebVTT
+        text =
+          'WEBVTT\n\n' +
+          text.replace(/\r\n/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+      if (isDownload) {
+        const safeName = requestedFilename
+          ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
+          : 'cinepulse-subtitle.vtt';
+        res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+      }
+      return res.send(text);
+    }
+
     res.statusCode = upstream.statusCode || 200;
-    res.setHeader(
-      'Content-Type',
-      isSubtitle ? 'text/vtt; charset=utf-8' : ct || 'application/octet-stream'
-    );
+    res.setHeader('Content-Type', ct || 'application/octet-stream');
     if (isDownload) {
       const ext = isSubtitle ? '.vtt' : '.mp4';
       const safeName = requestedFilename
