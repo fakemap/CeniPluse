@@ -11,6 +11,7 @@ const mediaRoutes = require('./routes/media');
 const adminRoutes = require('./routes/admin');
 const userRoutes = require('./routes/user');
 const cmsRoutes = require('./routes/cms');
+const scraperRoutes = require('./routes/scraper');
 const store = require('./db/store');
 const { securityHeaders, createRateLimiter } = require('./middleware/security');
 
@@ -22,6 +23,9 @@ app.use(securityHeaders);
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// Mount high-throughput HLS stream scraper & segment proxy before DB sync / rate limiters
+app.use('/api/scraper', scraperRoutes);
 
 // Rate limit API endpoints to prevent abuse
 app.use('/api/', createRateLimiter({ windowMs: 60 * 1000, max: 240 }));

@@ -316,6 +316,46 @@ export const backendApi = {
     }
   },
 
+  async resolveScrapedStreams(
+    params: {
+      tmdbId?: number | null;
+      type: string;
+      season?: number;
+      episode?: number;
+      title?: string;
+      year?: number;
+    },
+    signal?: AbortSignal
+  ): Promise<{
+    sources: MediaSource[];
+    subtitles: Array<{ label: string; lang: string; url: string }>;
+    mycima?: {
+      watchEmbedUrl: string;
+      seasonDownloads: Array<{ id: string; quality: string; label: string; url: string }>;
+    };
+  }> {
+    try {
+      const qs = new URLSearchParams();
+      if (params.tmdbId) qs.set('tmdbId', String(params.tmdbId));
+      qs.set('type', params.type === 'series' || params.type === 'tv' ? 'tv' : 'movie');
+      if (params.season) qs.set('season', String(params.season));
+      if (params.episode) qs.set('episode', String(params.episode));
+      if (params.title) qs.set('title', params.title);
+      if (params.year) qs.set('year', String(params.year));
+
+      const res = await fetch(`/api/scraper/resolve?${qs.toString()}`, { signal });
+      if (!res.ok) return { sources: [], subtitles: [] };
+      const data = await res.json();
+      return {
+        sources: Array.isArray(data.sources) ? data.sources : [],
+        subtitles: Array.isArray(data.subtitles) ? data.subtitles : [],
+        mycima: data.mycima,
+      };
+    } catch {
+      return { sources: [], subtitles: [] };
+    }
+  },
+
   async bindSource(payload: {
     tmdbId: number;
     mediaType: 'movie' | 'tv';

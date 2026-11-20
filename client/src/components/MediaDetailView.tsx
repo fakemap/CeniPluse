@@ -106,6 +106,16 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const [externalSubLabel, setExternalSubLabel] = useState<string>('English');
   const [showSubConfig, setShowSubConfig] = useState<boolean>(false);
 
+  // Ad-free Native Scraped Streams & Subtitles (4texas4/movie-scraper + cinepro-org/core + yousefkotp)
+  const [scrapedSubtitles, setScrapedSubtitles] = useState<
+    Array<{ label: string; lang: string; url: string }>
+  >([]);
+  const [mycimaSeasonDownloads, setMycimaSeasonDownloads] = useState<
+    Array<{ id: string; quality: string; label: string; url: string }>
+  >([]);
+  const [resolvingStreams, setResolvingStreams] = useState<boolean>(false);
+  const userPinnedEmbedRef = useRef<boolean>(false);
+
   const [activeSources, setActiveSources] = useState<MediaSource[]>(item.sources || []);
   const [activeSourceIdx, setActiveSourceIdx] = useState(0);
   const [activeEpisodeLabel, setActiveEpisodeLabel] = useState<string>('');
@@ -183,6 +193,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     setBannerHasSnippet(false);
     setPreviewDismissed(false);
     setShowSubConfig(false);
+    setScrapedSubtitles([]);
+    setMycimaSeasonDownloads([]);
+    userPinnedEmbedRef.current = false;
 
     try {
       const savedMal = item.malId
@@ -343,6 +356,78 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       controller.abort();
     };
   }, [enriched.type, enriched.tmdbId, enriched.seasons, selectedSeasonNum]);
+
+  // Auto-resolve Ad-Free Native HLS/MP4 Streams & Subtitles (4texas4/movie-scraper + cinepro-org/core + yousefkotp)
+  useEffect(() => {
+    if (!enriched.tmdbId) return;
+
+    let mounted = true;
+    const controller = new AbortController();
+    setResolvingStreams(true);
+
+    backendApi
+      .resolveScrapedStreams(
+        {
+          tmdbId: enriched.tmdbId,
+          type: enriched.type,
+          season: enriched.type === 'series' ? selectedSeasonNum : undefined,
+          episode: enriched.type === 'series' ? selectedEpNum : undefined,
+          title: enriched.title,
+          year: enriched.year,
+        },
+        controller.signal
+      )
+      .then((res) => {
+        if (!mounted || controller.signal.aborted) return;
+        setResolvingStreams(false);
+
+        if (res.subtitles && res.subtitles.length > 0) {
+          setScrapedSubtitles(res.subtitles);
+        }
+        if (res.mycima?.seasonDownloads && res.mycima.seasonDownloads.length > 0) {
+          setMycimaSeasonDownloads(res.mycima.seasonDownloads);
+        }
+
+        if (res.sources && res.sources.length > 0) {
+          setActiveSources((prev) => {
+            const existingCustom = prev.filter(
+              (s) =>
+                !s.id.startsWith('vidlink_wasm_') &&
+                !s.id.startsWith('vidrock_') &&
+                !s.id.startsWith('videasy_') &&
+                !s.id.startsWith('vixsrc_') &&
+                !s.id.startsWith('vidnest_') &&
+                !s.id.startsWith('cinesu_')
+            );
+            const merged = [...existingCustom, ...res.sources];
+            return merged;
+          });
+
+          // Auto-switch from iframe embed to ad-free native HTML5/HLS.js player unless user explicitly pinned the VidLink iframe or MAL ID
+          setMode((currentMode) => {
+            if (currentMode === 'embed' && !userPinnedEmbedRef.current && !malIdOverride.trim()) {
+              return 'stream';
+            }
+            return currentMode;
+          });
+        }
+      })
+      .catch(() => {
+        if (mounted) setResolvingStreams(false);
+      });
+
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [
+    enriched.tmdbId,
+    enriched.type,
+    enriched.title,
+    enriched.year,
+    selectedSeasonNum,
+    selectedEpNum,
+  ]);
 
   const currentSource = activeSources[activeSourceIdx] || activeSources[0];
 
@@ -1010,8 +1095,29 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   ref={videoRef}
                   controls
                   playsInline
+                  crossOrigin="anonymous"
                   className="w-full h-full object-contain bg-black"
-                />
+                >
+                  {externalSubUrl.trim() && (
+                    <track
+                      kind="subtitles"
+                      src={externalSubUrl.trim()}
+                      label={externalSubLabel.trim() || 'External Subtitle'}
+                      srcLang="en"
+                      default
+                    />
+                  )}
+                  {scrapedSubtitles.slice(0, 12).map((sub, i) => (
+                    <track
+                      key={`${sub.url}-${i}`}
+                      kind="subtitles"
+                      src={sub.url}
+                      label={sub.label}
+                      srcLang={sub.lang || 'en'}
+                      default={!externalSubUrl.trim() && i === 0}
+                    />
+                  ))}
+                </video>
                 {streamError && (
                   <div className="absolute inset-0 bg-[#0B0D12]/95 flex flex-col items-center justify-center p-6 text-center gap-3 z-10">
                     <p className="text-sm font-bold text-[#F8FAFC] max-w-md">{streamError}</p>
@@ -1031,6 +1137,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           type="button"
                           onClick={() => {
                             setStreamError('');
+                            userPinnedEmbedRef.current = true;
                             setMode('embed');
                           }}
                           className="min-h-[40px] px-4 rounded-full bg-[#10B981] text-[#041811] text-xs font-extrabold"
@@ -1161,8 +1268,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             )}
           </div>
 
-          {/* VidLink & Server Switcher Toolbar Below Active Theater Player */}
-          {canEmbedVidLink && (
+          {/* Ad-Free Native Mirrors & VidLink Fallback Server Switcher Toolbar Below Active Theater Player */}
+          {(canEmbedVidLink || activeSources.length > 0) && (
             <div className="px-4 sm:px-6 lg:px-8 py-3 bg-[#10141D] border-t border-white/[0.08] space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 {/* Server & Player Engine Selection */}
@@ -1172,43 +1279,18 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     Server:
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVidlinkPlayerType('default');
-                      setMode('embed');
-                    }}
-                    className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                      mode === 'embed' && vidlinkPlayerType === 'default'
-                        ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
-                        : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
-                    }`}
-                  >
-                    <Play className="w-3 h-3 fill-current" />
-                    VidLink Pro (Default)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVidlinkPlayerType('jw');
-                      setMode('embed');
-                    }}
-                    className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                      mode === 'embed' && vidlinkPlayerType === 'jw'
-                        ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
-                        : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
-                    }`}
-                  >
-                    <Play className="w-3 h-3 fill-current" />
-                    VidLink (JWPlayer)
-                  </button>
+                  {resolvingStreams && activeSources.length === 0 && (
+                    <span className="text-xs font-bold text-[#00E5FF] animate-pulse">
+                      Resolving Ad-Free Native Streams...
+                    </span>
+                  )}
 
                   {activeSources.map((src, idx) => (
                     <button
                       key={src.id}
                       type="button"
                       onClick={() => {
+                        userPinnedEmbedRef.current = false;
                         setActiveSourceIdx(idx);
                         setMode('stream');
                       }}
@@ -1219,9 +1301,47 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       }`}
                     >
                       <Play className="w-3 h-3 fill-current" />
-                      {src.label || `Custom Mirror ${idx + 1}`} ({src.quality})
+                      {src.label || `Native Mirror ${idx + 1}`}
                     </button>
                   ))}
+
+                  {canEmbedVidLink && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          userPinnedEmbedRef.current = true;
+                          setVidlinkPlayerType('default');
+                          setMode('embed');
+                        }}
+                        className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                          mode === 'embed' && vidlinkPlayerType === 'default'
+                            ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                            : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        VidLink Embed (Fallback)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          userPinnedEmbedRef.current = true;
+                          setVidlinkPlayerType('jw');
+                          setMode('embed');
+                        }}
+                        className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                          mode === 'embed' && vidlinkPlayerType === 'jw'
+                            ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                            : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        VidLink (JWPlayer)
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 {/* Anime Sub/Dub + MAL ID Switcher & External VTT Subtitles */}
@@ -1628,13 +1748,42 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   )}
                 </div>
 
-                {(activeSources.length > 0 || canEmbedVidLink) && (
+                {(activeSources.length > 0 || canEmbedVidLink || resolvingStreams) && (
                   <div className="flex flex-wrap gap-2">
+                    {resolvingStreams && activeSources.length === 0 && (
+                      <div className="min-h-[40px] px-4 rounded-lg bg-[#141821] border border-[#00E5FF]/40 text-xs font-bold text-[#00E5FF] inline-flex items-center gap-2 animate-pulse">
+                        <Server className="w-3.5 h-3.5" />
+                        <span>Resolving Ad-Free Native Streams...</span>
+                      </div>
+                    )}
+
+                    {activeSources.map((src, idx) => (
+                      <button
+                        key={src.id}
+                        type="button"
+                        onClick={() => {
+                          userPinnedEmbedRef.current = false;
+                          setActiveSourceIdx(idx);
+                          setMode('stream');
+                        }}
+                        className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                          mode === 'stream' && activeSourceIdx === idx
+                            ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
+                            : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
+                        }`}
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>{src.label || src.quality}</span>
+                        <span className="text-[#94A3B8] font-normal">({src.size})</span>
+                      </button>
+                    ))}
+
                     {canEmbedVidLink && (
                       <>
                         <button
                           type="button"
                           onClick={() => {
+                            userPinnedEmbedRef.current = true;
                             setVidlinkPlayerType('default');
                             setMode('embed');
                           }}
@@ -1648,7 +1797,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           <span>
                             {parsedMalId
                               ? `VidLink Anime (${animeAudioType.toUpperCase()})`
-                              : 'VidLink Cloud Stream'}
+                              : 'VidLink Embed (Fallback)'}
                           </span>
                           <span className="text-[#94A3B8] font-normal">(1080p Auto)</span>
                         </button>
@@ -1656,6 +1805,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         <button
                           type="button"
                           onClick={() => {
+                            userPinnedEmbedRef.current = true;
                             setVidlinkPlayerType('jw');
                             setMode('embed');
                           }}
@@ -1671,30 +1821,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         </button>
                       </>
                     )}
-
-                    {activeSources.map((src, idx) => (
-                      <button
-                        key={src.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveSourceIdx(idx);
-                          setMode('stream');
-                        }}
-                        className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
-                          mode === 'stream' && activeSourceIdx === idx
-                            ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
-                            : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
-                        }`}
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>{src.quality}</span>
-                        <span className="text-[#94A3B8] font-normal">({src.size})</span>
-                      </button>
-                    ))}
                   </div>
                 )}
 
-                {activeSources.length === 0 && (
+                {activeSources.length === 0 && !resolvingStreams && (
                   <div className="rounded-xl bg-[#141821] border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="text-xs text-[#94A3B8] leading-relaxed">
                       {canEmbedVidLink ? (
@@ -1742,6 +1872,30 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   </div>
                 )}
               </>
+            )}
+
+            {/* MyCima Full-Season Download Packs (yousefkotp/Movies-and-Series-Scraper) */}
+            {mycimaSeasonDownloads.length > 0 && (
+              <div className="rounded-xl bg-[#141821] border border-[#10B981]/35 p-3.5 space-y-2">
+                <div className="text-xs font-extrabold text-[#10B981] flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" />
+                  1-Click Full Season Download Packs
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {mycimaSeasonDownloads.map((dl) => (
+                    <a
+                      key={dl.id}
+                      href={dl.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-[36px] px-3.5 rounded-lg bg-[#0B0D12] hover:bg-[#1E2430] border border-[#10B981]/40 text-xs font-bold text-[#F8FAFC] inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#10B981]" />
+                      {dl.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
