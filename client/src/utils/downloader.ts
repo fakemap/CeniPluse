@@ -24,11 +24,14 @@ function formatMb(bytes: number): string {
 }
 
 /**
- * Downloads a .vtt subtitle via fetch + Blob so browsers never block it.
+ * Downloads an .srt subtitle via fetch + Blob so browsers never block it.
  */
 export async function downloadSubtitleFile(url: string, filename: string): Promise<void> {
   const sep = url.includes('?') ? '&' : '?';
-  const fetchUrl = url.includes('download=1') ? url : `${url}${sep}download=1`;
+  let fetchUrl = url.includes('download=1') ? url : `${url}${sep}download=1`;
+  if (!fetchUrl.includes('format=')) {
+    fetchUrl += '&format=srt';
+  }
   const res = await fetch(fetchUrl);
   if (!res.ok) {
     throw new Error(`Subtitle server returned HTTP ${res.status}`);
@@ -37,8 +40,9 @@ export async function downloadSubtitleFile(url: string, filename: string): Promi
   if (!text.trim()) {
     throw new Error('Subtitle file was empty');
   }
-  const blob = new Blob([text], { type: 'text/vtt;charset=utf-8' });
-  saveBlobToDisk(blob, filename);
+  const srtFilename = filename.replace(/\.vtt$/i, '.srt');
+  const blob = new Blob([text], { type: 'application/x-subrip;charset=utf-8' });
+  saveBlobToDisk(blob, srtFilename);
 }
 
 /**

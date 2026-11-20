@@ -7,6 +7,7 @@ const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const muxjs = require('mux.js');
+const store = require('../db/store');
 const { isSafeExternalUrl } = require('../middleware/security');
 
 const router = express.Router();
@@ -594,6 +595,136 @@ async function scrapeEngineSix({ tmdbId, type, season, episode }) {
 }
 
 // ============================================================================
+// 2B. Exact TMDB/IMDB-Matched OpenSubtitles v3 Resolver (Accurate Series/Movie SRT)
+// ============================================================================
+const imdbIdCache = new Map();
+const SUB_LANG_NAMES = {
+  eng: 'English',
+  spa: 'Español',
+  fra: 'Français',
+  fre: 'Français',
+  ara: 'العربية',
+  por: 'Português',
+  pob: 'Português (BR)',
+  deu: 'Deutsch',
+  ger: 'Deutsch',
+  ita: 'Italiano',
+  jpn: '日本語',
+  kor: '한국어',
+  hin: 'हिन्दी',
+  ind: 'Indonesian',
+  tur: 'Türkçe',
+  rus: 'Русский',
+  zho: '中文',
+  chi: '中文',
+  ben: 'বাংলা',
+  tgl: 'Filipino',
+  nld: 'Nederlands',
+  dut: 'Nederlands',
+  pol: 'Polski',
+  vie: 'Tiếng Việt',
+  tha: 'ไทย',
+};
+
+async function resolveImdbIdFromTmdb(tmdbId, type) {
+  if (!tmdbId) return null;
+  const cacheKey = `${type}:${tmdbId}`;
+  if (imdbIdCache.has(cacheKey)) return imdbIdCache.get(cacheKey);
+
+  const key = (store.getSettings().tmdbApiKey || process.env.TMDB_API_KEY || '').trim();
+  if (!key) return null;
+
+  const endpoint =
+    type === 'tv'
+      ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids`
+      : `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids`;
+  const isBearer = key.length > 50 || key.startsWith('eyJ');
+  const url = isBearer ? endpoint : `${endpoint}?api_key=${encodeURIComponent(key)}`;
+  const headers = { Accept: 'application/json' };
+  if (isBearer) headers.Authorization = `Bearer ${key}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3500);
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const imdbId = typeof data.imdb_id === 'string' && data.imdb_id.startsWith('tt') ? data.imdb_id : null;
+    if (imdbId) {
+      if (imdbIdCache.size > 500) imdbIdCache.delete(imdbIdCache.keys().next().value);
+      imdbIdCache.set(cacheKey, imdbId);
+    }
+    return imdbId;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchExactOpenSubtitles({ tmdbId, type, season, episode }) {
+  const imdbId = await resolveImdbIdFromTmdb(tmdbId, type);
+  if (!imdbId) return { sources: [], subtitles: [] };
+
+  const subEndpoint =
+    type === 'tv'
+      ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season || 1}:${episode || 1}.json`
+      : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(subEndpoint, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) return { sources: [], subtitles: [] };
+    const data = await res.json();
+    const list = Array.isArray(data?.subtitles) ? data.subtitles : [];
+    if (list.length === 0) return { sources: [], subtitles: [] };
+
+    // Prefer single-file BluRay/WEB-DL/1080p/720p releases, skip split CD1/CD2 releases
+    const scoreRelease = (s) => {
+      const name = String(s.subtitleFileName || s.movieReleaseName || '').toLowerCase();
+      let score = 0;
+      if (/\bcd1\b|\bcd2\b|disc\s*1|disc\s*2/.test(name)) score -= 50;
+      if (/web-?dl|webrip|bluray|bdrip|brrip/.test(name)) score += 20;
+      if (/1080p|720p/.test(name)) score += 10;
+      if (s.SubEncoding === 'UTF-8') score += 5;
+      return score;
+    };
+
+    const byLang = new Map();
+    for (const item of list) {
+      if (!item || !item.url || !item.lang) continue;
+      const code = String(item.lang).toLowerCase().slice(0, 3);
+      const label = SUB_LANG_NAMES[code];
+      if (!label) continue;
+      const sc = scoreRelease(item);
+      const existing = byLang.get(label);
+      if (!existing || sc > existing.score) {
+        byLang.set(label, {
+          score: sc,
+          label,
+          lang: code.slice(0, 2),
+          url: buildProxyUrl(item.url, 'https://opensubtitles-v3.strem.io/', 'https://opensubtitles-v3.strem.io'),
+        });
+      }
+    }
+
+    const subtitles = Array.from(byLang.values())
+      .sort((a, b) => (a.label === 'English' ? -1 : b.label === 'English' ? 1 : a.label.localeCompare(b.label)))
+      .map(({ label, lang, url }) => ({ label, lang, url }));
+
+    return { sources: [], subtitles };
+  } catch {
+    return { sources: [], subtitles: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ============================================================================
 // 3. Season Pack & Episode Archive Scraper (Engine 7)
 // ============================================================================
 async function scrapeSeasonArchives({ title, type = 'movie', season = 1 }) {
@@ -702,6 +833,7 @@ router.get('/resolve', async (req, res) => {
         scrapeEngineFour(context),
         scrapeEngineTwo(context),
         scrapeEngineSix(context),
+        fetchExactOpenSubtitles(context),
       ]
     : [];
 
@@ -715,14 +847,24 @@ router.get('/resolve', async (req, res) => {
   const rawSources = [];
   const subtitles = [];
 
+  // Prioritize accurate subtitles:
+  // 1) Engine 4 embedded stream-synced subs (index 1)
+  // 2) Exact IMDB+Season+Episode OpenSubtitles v3 (index 4)
+  // 3) Engine 2 (index 2) & Engine 1 (index 0) as fallback for additional languages
+  const subtitlePriorityOrder = [1, 4, 2, 0, 3];
+
   providerResults.forEach((r) => {
     if (r.status === 'fulfilled' && r.value) {
       if (Array.isArray(r.value.sources) && r.value.sources.length > 0) {
         rawSources.push(...r.value.sources);
       }
-      if (Array.isArray(r.value.subtitles)) {
-        subtitles.push(...r.value.subtitles);
-      }
+    }
+  });
+
+  subtitlePriorityOrder.forEach((idx) => {
+    const r = providerResults[idx];
+    if (r && r.status === 'fulfilled' && r.value && Array.isArray(r.value.subtitles)) {
+      subtitles.push(...r.value.subtitles);
     }
   });
 
@@ -1222,6 +1364,65 @@ async function streamHlsAsVideoDownload({
   }
 }
 
+function convertTextToSrt(rawText) {
+  const clean = String(rawText || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  const blocks = clean.split(/\n{2,}/);
+  const cues = [];
+  let idx = 1;
+
+  for (const block of blocks) {
+    const lines = block
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) continue;
+    if (/^(WEBVTT|NOTE|STYLE|REGION)/i.test(lines[0])) continue;
+
+    // Find the timecode line (supports both VTT 00:00:01.200 / 01:02.300 and SRT 00:00:01,200)
+    const timeIdx = lines.findIndex((l) => l.includes('-->'));
+    if (timeIdx === -1) continue;
+
+    const rawTime = lines[timeIdx];
+    const parts = rawTime.split('-->');
+    if (parts.length < 2) continue;
+
+    const normTime = (t) => {
+      const token = t.trim().split(/\s+/)[0].replace('.', ',');
+      const segs = token.split(':');
+      if (segs.length === 2) {
+        return `00:${segs[0].padStart(2, '0')}:${segs[1]}`;
+      }
+      if (segs.length === 3) {
+        return `${segs[0].padStart(2, '0')}:${segs[1].padStart(2, '0')}:${segs[2]}`;
+      }
+      return token;
+    };
+
+    const textLines = lines
+      .slice(timeIdx + 1)
+      .map((l) => l.replace(/<\/?[^>]+>/g, '').trim())
+      .filter(Boolean);
+    if (textLines.length === 0) continue;
+
+    cues.push(`${idx}\r\n${normTime(parts[0])} --> ${normTime(parts[1])}\r\n${textLines.join('\r\n')}`);
+    idx++;
+  }
+
+  return cues.join('\r\n\r\n') + (cues.length ? '\r\n' : '');
+}
+
+function convertTextToVtt(rawText) {
+  let text = String(rawText || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  if (!text.trimStart().startsWith('WEBVTT')) {
+    text = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+  }
+  return text;
+}
+
 router.get('/proxy', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader(
@@ -1253,6 +1454,9 @@ router.get('/proxy', async (req, res) => {
 
   const isDownload = req.query.download === '1';
   const requestedFilename = String(req.query.filename || '').trim();
+  const wantsSrt =
+    String(req.query.format || '').toLowerCase() === 'srt' ||
+    /\.srt$/i.test(requestedFilename);
 
   const customHeaders = {
     Referer: referer,
@@ -1273,7 +1477,12 @@ router.get('/proxy', async (req, res) => {
       ct.includes('m3u8') ||
       /\.m3u8?$/i.test(cleanPath);
     const isSubtitle =
-      /\.vtt$|\.srt$/i.test(cleanPath) || ct.includes('text/vtt');
+      wantsSrt ||
+      /\.vtt$|\.srt$/i.test(cleanPath) ||
+      ct.includes('text/vtt') ||
+      ct.includes('subrip') ||
+      rawUrl.includes('subs5.strem.io') ||
+      rawUrl.includes('sub.vdrk.site');
 
     if (isM3u8) {
       const chunks = [];
@@ -1281,13 +1490,49 @@ router.get('/proxy', async (req, res) => {
       const body = Buffer.concat(chunks).toString('utf8');
 
       if (body.trimStart().startsWith('#EXTM3U')) {
+        // If this is an HLS Subtitle playlist (.m3u8 pointing to .vtt segments) and user wants SRT/subtitle
+        const isSubtitlePlaylist =
+          wantsSrt || (/\.vtt(\?|$|\n)/i.test(body) && !body.includes('#EXT-X-STREAM-INF'));
+        if (isSubtitlePlaylist && (isDownload || wantsSrt)) {
+          const segUrls = body
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith('#'))
+            .map((l) => resolveRelativeUrl(l, rawUrl));
+          const stitched = [];
+          for (const su of segUrls) {
+            try {
+              const sBuf = await fetchUpstreamBuffer(su, { Referer: referer, Origin: origin });
+              stitched.push(sBuf.toString('utf8'));
+            } catch {
+              // ignore individual segment failure
+            }
+          }
+          const combinedRaw = stitched.join('\n\n');
+          const outText = wantsSrt ? convertTextToSrt(combinedRaw) : convertTextToVtt(combinedRaw);
+          res.statusCode = 200;
+          res.setHeader(
+            'Content-Type',
+            wantsSrt ? 'application/x-subrip; charset=utf-8' : 'text/vtt; charset=utf-8'
+          );
+          if (isDownload) {
+            const safeName = requestedFilename
+              ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
+              : wantsSrt
+              ? 'cinepulse-subtitle.srt'
+              : 'cinepulse-subtitle.vtt';
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+          }
+          return res.send(outText);
+        }
+
         if (isDownload) {
           return await streamHlsAsVideoDownload({
             manifestBody: body,
             manifestUrl: rawUrl,
             customHeaders: { Referer: referer, Origin: origin },
             requestedQuality: req.query.quality,
-            filename: requestedFilename || 'cinepulse-video.ts',
+            filename: requestedFilename || 'cinepulse-video.mp4',
             req,
             res,
           });
@@ -1306,22 +1551,22 @@ router.get('/proxy', async (req, res) => {
     if (isSubtitle) {
       const chunks = [];
       for await (const chunk of upstream) chunks.push(chunk);
-      let text = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
-      if (!text.trimStart().startsWith('WEBVTT')) {
-        // Convert SRT timecodes (00:00:01,500 --> 00:00:03,000) to valid WebVTT
-        text =
-          'WEBVTT\n\n' +
-          text.replace(/\r\n/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-      }
+      const rawSubText = Buffer.concat(chunks).toString('utf8');
+      const outText = wantsSrt ? convertTextToSrt(rawSubText) : convertTextToVtt(rawSubText);
       res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+      res.setHeader(
+        'Content-Type',
+        wantsSrt ? 'application/x-subrip; charset=utf-8' : 'text/vtt; charset=utf-8'
+      );
       if (isDownload) {
         const safeName = requestedFilename
           ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
+          : wantsSrt
+          ? 'cinepulse-subtitle.srt'
           : 'cinepulse-subtitle.vtt';
         res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
       }
-      return res.send(text);
+      return res.send(outText);
     }
 
     res.statusCode = upstream.statusCode || 200;

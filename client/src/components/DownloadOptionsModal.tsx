@@ -335,7 +335,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       out.push({
         code: `${sub.lang || 'en'}_${out.length}`,
         label: cleanLabel,
-        size: 'VTT Subtitle',
+        size: 'SRT Subtitle',
         url: sub.url,
       });
       if (out.length >= 8) break;
@@ -414,7 +414,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
         : '';
       const safeTitle = item.title.replace(/[^a-zA-Z0-9._-]/g, '_');
       const safeLang = sub.label.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const subFilename = `${safeTitle}${epSuffix}.${safeLang}.vtt`;
+      const subFilename = `${safeTitle}${epSuffix}.${safeLang}.srt`;
       await downloadSubtitleFile(sub.url, subFilename);
       setDownloadStatus(`Saved ${sub.label} subtitle (${subFilename}) to your downloads.`);
     } catch (err) {
@@ -799,7 +799,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                   ) : (
                     <Download className="w-3 h-3" />
                   )}
-                  {downloadingSub ? 'Saving Subtitle...' : `Download ${activeSubObj.label} (.VTT)`}
+                  {downloadingSub ? 'Saving Subtitle...' : `Download ${activeSubObj.label} (.SRT)`}
                 </button>
               )}
             </div>
