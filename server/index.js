@@ -12,6 +12,7 @@ const adminRoutes = require('./routes/admin');
 const userRoutes = require('./routes/user');
 const cmsRoutes = require('./routes/cms');
 const scraperRoutes = require('./routes/scraper');
+const analyticsRoutes = require('./routes/analytics');
 const store = require('./db/store');
 const { securityHeaders, createRateLimiter } = require('./middleware/security');
 
@@ -71,6 +72,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/cms', cmsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health endpoint
 app.get('/api/health', (req, res) => {

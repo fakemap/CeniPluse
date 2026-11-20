@@ -23,11 +23,13 @@ import {
   Flame,
   RefreshCw,
   LogOut,
+  BarChart3,
 } from 'lucide-react';
 import type { CmsTitleItem, MediaItem } from '../types/media';
 import { backendApi } from '../services/api';
+import { AdminAnalyticsDashboard } from './AdminAnalyticsDashboard';
 
-export type AdminTab = 'draft' | 'published' | 'requests' | 'source' | 'create';
+export type AdminTab = 'analytics' | 'draft' | 'published' | 'requests' | 'source' | 'create';
 
 interface AdminPortalViewProps {
   onCatalogChanged: () => void;
@@ -42,7 +44,7 @@ interface AdminPortalViewProps {
 export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onCatalogChanged,
   onPreviewMedia,
-  initialTab = 'draft',
+  initialTab = 'analytics',
   userEmail = null,
   onRequireAuth,
   onSignOut,
@@ -761,6 +763,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {/* Admin Workflow Tabs */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {[
+          { id: 'analytics' as const, label: 'Analytics & Revenue', icon: BarChart3 },
           { id: 'draft' as const, label: `Needs Links / Drafts (${summary.draftQueue})`, icon: Clock },
           { id: 'published' as const, label: `Published Live (${summary.published})`, icon: CheckCircle2 },
           { id: 'requests' as const, label: `User Requests (${requestsData.summary.unfulfilledRequestedTitles})`, icon: Send },
@@ -782,6 +785,9 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           </button>
         ))}
       </div>
+
+      {/* TAB 0: ANALYTICS, USER ACTIVITY & REVENUE COMMAND CENTER */}
+      {tab === 'analytics' && <AdminAnalyticsDashboard onNotify={notify} />}
 
       {/* TAB 1 & TAB 2: DRAFT QUEUE & PUBLISHED INVENTORY */}
       {(tab === 'draft' || tab === 'published') && (

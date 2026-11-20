@@ -36,6 +36,12 @@ import { MobileSearchView } from './components/MobileSearchView';
 import { TrendingRankedView } from './components/TrendingRankedView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GridSkeleton, HeroSkeleton, RailSkeleton } from './components/SkeletonLoaders';
+import { SponsoredBanner } from './components/SponsoredBanner';
+import {
+  fetchPublicMonetizationConfig,
+  trackEvent,
+  type MonetizationConfig,
+} from './services/analytics';
 
 // Code-split heavy detail page & admin studio off the initial mobile entry bundle
 const MediaDetailView = lazy(() =>
@@ -605,7 +611,45 @@ export const App: React.FC = () => {
     backendApi.syncWatchlistToggle(id).catch(() => {
       setWatchlistIds(previousSnapshot);
     });
+
+    if (!previousSnapshot.has(id)) {
+      const targetItem = catalog.find((m) => m.id === id);
+      trackEvent({
+        eventType: 'watchlist_add',
+        mediaId: id,
+        mediaTitle: targetItem?.title,
+        mediaType: targetItem?.type,
+        mediaPoster: targetItem?.poster,
+      });
+    }
   };
+
+  // Monetization / Ad Config fetched once for tasteful SponsoredBanner rendering
+  const [monetizationConfig, setMonetizationConfig] = useState<MonetizationConfig | null>(null);
+  useEffect(() => {
+    fetchPublicMonetizationConfig().then((cfg) => {
+      if (cfg) setMonetizationConfig(cfg);
+    });
+  }, []);
+
+  // Track page views & title detail views automatically
+  useEffect(() => {
+    if (selectedMedia?.item) {
+      trackEvent({
+        eventType: 'title_view',
+        mediaId: selectedMedia.item.id,
+        mediaTitle: selectedMedia.item.title,
+        mediaType: selectedMedia.item.type,
+        mediaPoster: selectedMedia.item.poster,
+        pagePath: `title/${selectedMedia.item.id}`,
+      });
+    } else if (activeRoute !== 'admin') {
+      trackEvent({
+        eventType: 'page_view',
+        pagePath: activeRoute,
+      });
+    }
+  }, [activeRoute, selectedMedia?.item?.id]);
 
   // In-app "Back" on the detail page: step back through browser history when we came from inside the site
   const handleDetailBack = () => {
@@ -905,6 +949,13 @@ export const App: React.FC = () => {
             onPlay={handlePlayItem}
             onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
             onToggleWatchlist={handleToggleWatchlist}
+          />
+
+          <SponsoredBanner
+            config={monetizationConfig}
+            premiumPlan={premiumPlan}
+            placement="home_mid"
+            onOpenPremium={() => setActiveModal('pro')}
           />
 
           {/* 1) ADMIN-PUBLISHED LIVE MOVIES & SERIES (Playable right now) */}

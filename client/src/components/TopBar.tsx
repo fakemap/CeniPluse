@@ -16,6 +16,7 @@ import {
 import type { MediaItem } from '../types/media';
 import { UI_LANGUAGES } from '../data/catalog';
 import { backendApi } from '../services/api';
+import { trackEvent } from '../services/analytics';
 import {
   PREMIUM_BENEFITS,
   PremiumHexBadge,
@@ -136,6 +137,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       if (!controller.signal.aborted) {
         setLiveResults(liveMatches || []);
         setLoadingLive(false);
+        trackEvent({ eventType: 'search', searchQuery: term, pagePath: 'topbar' });
       }
     }, 250);
     return () => {

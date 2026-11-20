@@ -42,6 +42,7 @@ import {
 } from '../utils/vidlink';
 import { DownloadOptionsModal } from './DownloadOptionsModal';
 import { SnippetPlayer } from './SnippetPlayer';
+import { trackEvent } from '../services/analytics';
 
 interface MediaDetailViewProps {
   item: MediaItem;
@@ -678,6 +679,35 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   const isTheaterMode =
     mode === 'stream' || mode === 'embed' || (mode === 'trailer' && trailerFullPlayer);
+
+  // Track play_start & 30-second watch_heartbeat telemetry while actively streaming
+  useEffect(() => {
+    if (mode !== 'stream' && mode !== 'embed') return;
+    trackEvent({
+      eventType: 'play_start',
+      mediaId: enriched.id,
+      mediaTitle: enriched.title,
+      mediaType: enriched.type,
+      mediaPoster: enriched.poster,
+      metadata: {
+        mode,
+        season: enriched.type === 'series' ? selectedSeasonNum : undefined,
+        episode: enriched.type === 'series' ? selectedEpNum : undefined,
+      },
+    });
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      trackEvent({
+        eventType: 'watch_heartbeat',
+        mediaId: enriched.id,
+        mediaTitle: enriched.title,
+        mediaType: enriched.type,
+        mediaPoster: enriched.poster,
+        metadata: { watchSeconds: 30, mode },
+      });
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [mode, enriched.id, enriched.title, enriched.type, enriched.poster, selectedSeasonNum, selectedEpNum]);
   const bannerPreviewActive =
     isDesktopViewport && !isTheaterMode && !previewDismissed && !downloadModalOpen && heroInView && tabVisible;
 
@@ -710,6 +740,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       const res = await backendApi.requestMediaTitle(enriched);
       setRequestCount(res.requestCount);
       setHasRequested(true);
+      trackEvent({
+        eventType: 'title_request',
+        mediaId: enriched.id,
+        mediaTitle: enriched.title,
+        mediaType: enriched.type,
+        mediaPoster: enriched.poster,
+      });
       setRequestToast(
         `Requested "${enriched.title}" — our team will prioritize adding stream & download links!`
       );
@@ -790,6 +827,14 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       });
       setReviews((prev) => [saved, ...prev]);
       setReviewText('');
+      trackEvent({
+        eventType: 'review_post',
+        mediaId: enriched.id,
+        mediaTitle: enriched.title,
+        mediaType: enriched.type,
+        mediaPoster: enriched.poster,
+        metadata: { rating: reviewRating },
+      });
     } finally {
       setSubmittingReview(false);
     }

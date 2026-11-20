@@ -27,6 +27,7 @@ import {
   signUpWithEmail,
   type AuthUserProfile,
 } from '../services/supabase';
+import { trackEvent } from '../services/analytics';
 
 interface ActionModalsProps {
   modal: 'pro' | 'app' | 'signin' | null;
@@ -124,6 +125,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
           throw new Error('Password must be at least 6 characters.');
         }
         const res = await signUpWithEmail(cleanEmail, passwordInput, fullName);
+        trackEvent({ eventType: 'signup', pagePath: 'auth_modal' });
         if (res.session) {
           onClose();
         } else {

@@ -16,6 +16,7 @@ import {
   type PremiumPlan,
   type PremiumPlanId,
 } from './PremiumBenefitIcons';
+import { recordSubscriptionCheckout } from '../services/analytics';
 
 interface PremiumModalProps {
   onClose: () => void;
@@ -83,6 +84,13 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     }
     setValidUntil(expiry);
     onActivatePlan(pendingPlan.id);
+    recordSubscriptionCheckout({
+      planId: pendingPlan.id,
+      paymentMethod,
+      userEmail,
+      amount: Number(String(pendingPlan.price).replace(/[^0-9.]/g, '')) || 25,
+      currency: pendingPlan.currency || 'GHS',
+    });
     setUnlockedPlan(pendingPlan);
     setPendingPlan(null);
   };

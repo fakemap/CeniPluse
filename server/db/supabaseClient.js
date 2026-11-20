@@ -192,6 +192,32 @@ async function deleteByIds(table, ids) {
   }
 }
 
+/**
+ * Inserts one or more rows into a Supabase table.
+ */
+async function insertRows(table, rows, returnRepresentation = false) {
+  const payload = Array.isArray(rows) ? rows : [rows];
+  if (payload.length === 0) return [];
+  const res = await supabaseFetch(table, {
+    method: 'POST',
+    headers: {
+      Prefer: returnRepresentation ? 'return=representation' : 'return=minimal',
+    },
+    body: JSON.stringify(payload),
+  });
+  return returnRepresentation ? res.json() : [];
+}
+
+/**
+ * Queries rows from a Supabase table with optional PostgREST filter params & limit.
+ */
+async function queryRows(table, queryString = '') {
+  const endpoint = queryString ? `${table}?${queryString}` : `${table}?select=*`;
+  const res = await supabaseFetch(endpoint, { method: 'GET' });
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
 module.exports = {
   isEnabled,
   getCredentials,
@@ -200,4 +226,6 @@ module.exports = {
   fetchAllRows,
   upsertRows,
   deleteByIds,
+  insertRows,
+  queryRows,
 };

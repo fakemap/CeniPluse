@@ -27,6 +27,7 @@ import {
   downloadVideoWithProgress,
   type DownloadProgress,
 } from '../utils/downloader';
+import { trackEvent } from '../services/analytics';
 
 interface DownloadOptionsModalProps {
   item: MediaItem;
@@ -416,6 +417,18 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       const safeLang = sub.label.replace(/[^a-zA-Z0-9._-]/g, '_');
       const subFilename = `${safeTitle}${epSuffix}.${safeLang}.srt`;
       await downloadSubtitleFile(sub.url, subFilename);
+      trackEvent({
+        eventType: 'download_subtitle',
+        mediaId: item.id,
+        mediaTitle: item.title,
+        mediaType: item.type,
+        mediaPoster: item.poster,
+        metadata: {
+          language: sub.label,
+          season: isSeries ? selectedSeasonNum : undefined,
+          episode: isSeries ? primaryEpNum : undefined,
+        },
+      });
       setDownloadStatus(`Saved ${sub.label} subtitle (${subFilename}) to your downloads.`);
     } catch (err) {
       setDownloadError((err as Error).message || 'Could not download subtitle file.');
@@ -508,6 +521,19 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           episodeLabel: isSeries ? `S${selectedSeasonNum}:E${primaryEpNum}` : undefined,
           url: srcUrl,
           downloadedAt: new Date().toISOString(),
+        });
+
+        trackEvent({
+          eventType: 'download_video',
+          mediaId: item.id,
+          mediaTitle: item.title,
+          mediaType: item.type,
+          mediaPoster: item.poster,
+          metadata: {
+            quality: activeQualityObj.label,
+            season: isSeries ? selectedSeasonNum : undefined,
+            episode: isSeries ? primaryEpNum : undefined,
+          },
         });
 
         setDownloadStatus(

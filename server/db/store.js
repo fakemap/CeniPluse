@@ -13,6 +13,7 @@ const STATE_KEY_TO_FIELD = {
   source_bindings: 'sourceBindings',
   harvest_cursors: 'harvestCursors',
   auto_harvest: 'autoHarvest',
+  monetization_config: 'monetizationConfig',
 };
 
 function titleToDbRow(t) {

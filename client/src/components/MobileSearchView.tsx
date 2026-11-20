@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Search, X, TrendingUp } from 'lucide-react';
 import type { MediaItem } from '../types/media';
 import { backendApi } from '../services/api';
+import { trackEvent } from '../services/analytics';
 import { PosterCard } from './PosterCard';
 import { GridSkeleton } from './SkeletonLoaders';
 
@@ -52,6 +53,7 @@ export const MobileSearchView: React.FC<MobileSearchViewProps> = ({
       if (!controller.signal.aborted) {
         setLiveItems(liveMatches || []);
         setIsSearchingLive(false);
+        trackEvent({ eventType: 'search', searchQuery: term, pagePath: 'search' });
       }
     }, 250);
     return () => {
