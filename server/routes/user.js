@@ -1,5 +1,6 @@
 const express = require('express');
 const store = require('../db/store');
+const { sanitizeString } = require('../middleware/security');
 const { verifySupabaseUser, isSupabaseAdminUser } = require('../db/supabaseClient');
 
 const router = express.Router();

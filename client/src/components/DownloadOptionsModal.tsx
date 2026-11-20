@@ -297,7 +297,14 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     const out: SubtitleOptionItem[] = [];
     const seenLabels = new Set<string>();
 
-    for (const sub of resolvedModalSubs) {
+    // Sort English tracks first so English is selected by default
+    const sortedSubs = [...resolvedModalSubs].sort((a, b) => {
+      const aEn = /^en|english/i.test(`${a.lang || ''} ${a.label || ''}`) ? 0 : 1;
+      const bEn = /^en|english/i.test(`${b.lang || ''} ${b.label || ''}`) ? 0 : 1;
+      return aEn - bEn;
+    });
+
+    for (const sub of sortedSubs) {
       const cleanLabel = (sub.label || 'English').trim();
       const lower = cleanLabel.toLowerCase();
       if (seenLabels.has(lower)) continue;
