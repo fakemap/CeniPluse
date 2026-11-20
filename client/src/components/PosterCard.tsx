@@ -167,9 +167,9 @@ export const PosterCard: React.FC<PosterCardProps> = ({
           </span>
         </div>
 
-        {/* Crisp 1-Line Truncated Title & Desktop Cast */}
+        {/* Crisp 2-Line Mobile / 1-Line Desktop Title & Genre */}
         <div className="pt-1.5 md:pt-2 px-0.5">
-          <h3 className="text-[12px] md:text-[13px] font-semibold text-[#F8FAFC] leading-snug line-clamp-1 lg:group-hover:text-[#00E5FF] transition-colors">
+          <h3 className="text-[12.5px] md:text-[13px] font-semibold text-[#F8FAFC] leading-snug line-clamp-2 md:line-clamp-1 lg:group-hover:text-[#00E5FF] transition-colors">
             {item.title}
           </h3>
           {showCast ? (

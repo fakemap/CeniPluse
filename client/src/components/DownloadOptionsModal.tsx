@@ -548,14 +548,14 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="download-options-title"
-      className="fixed inset-0 z-[115] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[115] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-6 overflow-hidden"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl my-auto rounded-2xl bg-[#10151D] border border-white/[0.1] shadow-2xl overflow-hidden animate-modal"
+        className="w-full max-w-3xl max-h-[90dvh] sm:max-h-[86vh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-[#10151D] border-t sm:border border-white/[0.12] shadow-2xl overflow-hidden animate-modal"
       >
         {/* Top Header */}
-        <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between">
+        <div className="shrink-0 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/[0.07] flex items-center justify-between">
           <h2 id="download-options-title" className="text-base sm:text-lg font-extrabold text-[#F8FAFC]">
             Download Options
           </h2>
@@ -569,8 +569,8 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           </button>
         </div>
 
-        {/* Body Content */}
-        <div className="p-4 sm:p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+        {/* Scrollable Body Content */}
+        <div className="flex-1 min-h-0 p-4 sm:p-6 space-y-5 overflow-y-auto">
           {/* Media Summary Card */}
           <div className="rounded-xl bg-[#171D27] border border-white/[0.07] p-3.5 sm:p-4 flex gap-4">
             <img
@@ -713,16 +713,16 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 
           {/* Section 2: Select Quality (1080P, 720P, 480P, 360P) */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-md bg-[#6EE7B7] text-[#052E16] flex items-center justify-center">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-7 h-7 rounded-md bg-[#6EE7B7] text-[#052E16] flex items-center justify-center shrink-0">
                   <Video className="w-4 h-4" />
                 </span>
                 <span className="text-sm font-extrabold text-[#F8FAFC]">Select Quality</span>
                 {loadingLinks && (
                   <span className="text-xs font-semibold text-[#00E5FF] inline-flex items-center gap-1">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Syncing formats...
+                    Syncing...
                   </span>
                 )}
               </div>
@@ -730,7 +730,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setDataSaver((d) => !d)}
-                className={`min-h-[32px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                className={`min-h-[42px] px-3.5 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors shrink-0 ${
                   dataSaver
                     ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
                     : 'bg-[#171D27] border-white/[0.08] text-[#CBD5E1] hover:border-white/20'
@@ -741,7 +741,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
               {qualityOptions.map((q) => {
                 const isSelected = selectedQuality === q.label;
                 return (
@@ -763,7 +763,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                         <Star className="w-3 h-3 fill-[#FFB800]" />
                       </span>
                     )}
-                    <div className="text-sm font-extrabold text-[#F8FAFC] tabular-nums">
+                    <div className="text-sm font-extrabold text-[#F8FAFC] tabular-nums pr-6">
                       {q.label}
                     </div>
                     <div className="text-[11px] font-semibold text-[#CBD5E1] mt-0.5">
@@ -780,9 +780,9 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 
           {/* Section 3: Select Subtitle */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center">
+                <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center shrink-0">
                   <Captions className="w-4 h-4" />
                 </span>
                 <span className="text-sm font-extrabold text-[#F8FAFC]">Select Subtitle</span>
@@ -792,19 +792,19 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                   type="button"
                   disabled={downloadingSub}
                   onClick={(e) => handleDownloadSubtitleOnly(activeSubObj, e)}
-                  className="min-h-[30px] px-3 rounded-lg bg-[#161D27] hover:bg-[#1E2736] disabled:opacity-60 border border-[#00E5FF]/40 text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1.5 transition-colors"
+                  className="w-full sm:w-auto min-h-[44px] sm:min-h-[34px] px-3.5 rounded-xl sm:rounded-lg bg-[#161D27] hover:bg-[#1E2736] disabled:opacity-60 border border-[#00E5FF]/40 text-xs sm:text-[11px] font-bold text-[#00E5FF] inline-flex items-center justify-center gap-1.5 transition-colors"
                 >
                   {downloadingSub ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3.5 h-3.5" />
                   )}
                   {downloadingSub ? 'Saving Subtitle...' : `Download ${activeSubObj.label} (.SRT)`}
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {subtitleOptions.map((sub) => {
                 const isSelected = selectedSub === sub.code;
                 return (
@@ -812,7 +812,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                     key={sub.code}
                     type="button"
                     onClick={() => setSelectedSub(sub.code)}
-                    className={`relative rounded-xl border p-3.5 text-left transition-colors ${
+                    className={`relative rounded-xl border p-3 sm:p-3.5 text-left transition-colors ${
                       isSelected
                         ? 'bg-[#10B981]/12 border-[#10B981]/55'
                         : 'bg-[#161D27] border-white/[0.08] hover:border-white/25 hover:bg-[#1B2330]'
@@ -823,7 +823,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                         <Check className="w-3 h-3" />
                       </span>
                     )}
-                    <div className="text-sm font-bold text-[#F8FAFC] pr-6 truncate">
+                    <div className="text-[13px] sm:text-sm font-bold text-[#F8FAFC] pr-6 leading-snug line-clamp-2">
                       {sub.label}
                     </div>
                     <div className="text-[11px] text-[#94A3B8] mt-1 tabular-nums">
@@ -867,63 +867,63 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               {downloadStatus}
             </div>
           )}
+        </div>
 
-          {/* Action Footer */}
-          <div className="pt-2 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
-            <span className="text-xs text-[#94A3B8]">
-              {isTitleAvailable
-                ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeQualityObj.size}`
-                : 'No downloadable mirror linked yet — submit a request so we prioritize this title.'}
-            </span>
+        {/* Sticky Action Footer (Always Visible on Mobile Without Scrolling) */}
+        <div className="shrink-0 px-4 sm:px-6 py-3.5 border-t border-white/[0.08] bg-[#0D121A] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:pb-3.5">
+          <span className="text-xs text-[#94A3B8] text-center sm:text-left tabular-nums">
+            {isTitleAvailable
+              ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeQualityObj.size}`
+              : 'No downloadable mirror linked yet — submit a request so we prioritize this title.'}
+          </span>
 
-            {isTitleAvailable ? (
-              <button
-                type="button"
-                disabled={downloadingVideo || (loadingLinks && downloadableSources.length === 0)}
-                onClick={handleStartDownload}
-                className="min-h-[44px] px-6 rounded-full bg-[#10B981] hover:brightness-110 disabled:opacity-60 text-[#041811] text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 transition-all"
-              >
-                {downloadingVideo ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {downloadProgress ? `Downloading ${downloadProgress.percent}%...` : 'Downloading...'}
-                  </>
-                ) : loadingLinks && downloadableSources.length === 0 ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Preparing Download...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    Download Selected ({selectedQuality})
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={requesting}
-                onClick={onRequestTitle}
-                className={`min-h-[44px] px-6 rounded-full text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 transition-all ${
-                  hasRequested
-                    ? 'bg-[#10B981]/20 border border-[#10B981]/45 text-[#10B981]'
-                    : 'bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018]'
-                }`}
-              >
-                {hasRequested ? (
-                  <CheckCircle2 className="w-4 h-4" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                {requesting
-                  ? 'Sending Request...'
-                  : hasRequested
-                  ? 'Requested'
-                  : 'Request Download & Stream Link'}
-              </button>
-            )}
-          </div>
+          {isTitleAvailable ? (
+            <button
+              type="button"
+              disabled={downloadingVideo || (loadingLinks && downloadableSources.length === 0)}
+              onClick={handleStartDownload}
+              className="w-full sm:w-auto min-h-[46px] sm:min-h-[44px] px-6 rounded-xl sm:rounded-full bg-[#10B981] hover:brightness-110 active:scale-[0.98] disabled:opacity-60 text-[#041811] text-sm font-extrabold inline-flex items-center justify-center gap-2 transition-all"
+            >
+              {downloadingVideo ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {downloadProgress ? `Downloading ${downloadProgress.percent}%...` : 'Downloading...'}
+                </>
+              ) : loadingLinks && downloadableSources.length === 0 ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Preparing Download...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Selected ({selectedQuality})
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={requesting}
+              onClick={onRequestTitle}
+              className={`w-full sm:w-auto min-h-[46px] sm:min-h-[44px] px-6 rounded-xl sm:rounded-full text-sm font-extrabold inline-flex items-center justify-center gap-2 transition-all ${
+                hasRequested
+                  ? 'bg-[#10B981]/20 border border-[#10B981]/45 text-[#10B981]'
+                  : 'bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018]'
+              }`}
+            >
+              {hasRequested ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              {requesting
+                ? 'Sending Request...'
+                : hasRequested
+                ? 'Requested'
+                : 'Request Download & Stream Link'}
+            </button>
+          )}
         </div>
       </div>
     </div>

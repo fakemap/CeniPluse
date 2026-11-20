@@ -134,9 +134,9 @@ export const FilterMatrix: React.FC<FilterMatrixProps> = ({
 
   return (
     <>
-      {/* MOBILE (<768px): Single Horizontal Scrollable Row of Compact Filter Chips */}
-      <div className="md:hidden mb-4">
-        <div className="flex items-center gap-2 overflow-x-auto px-4 scrollbar-hide py-0.5">
+      {/* MOBILE (<768px): Single Horizontal Scrollable Row of Compact Filter Chips with Right-Edge Fade */}
+      <div className="md:hidden mb-4 relative">
+        <div className="flex items-center gap-1.5 overflow-x-auto pl-4 pr-10 scrollbar-hide py-0.5">
           <button
             type="button"
             onClick={() => setOpenSheet('genre')}
@@ -162,7 +162,7 @@ export const FilterMatrix: React.FC<FilterMatrixProps> = ({
                 key={key}
                 type="button"
                 onClick={() => setOpenSheet(key)}
-                className={`shrink-0 min-h-[44px] px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-all ${
+                className={`shrink-0 min-h-[44px] px-3 rounded-full border text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-all ${
                   chip.active
                     ? 'bg-[#00E5FF] border-[#00E5FF] text-[#071018] font-bold'
                     : 'bg-[#141821] border-white/10 text-[#CBD5E1] active:bg-[#1E2430]'
@@ -178,13 +178,14 @@ export const FilterMatrix: React.FC<FilterMatrixProps> = ({
             <button
               type="button"
               onClick={onReset}
-              className="shrink-0 min-h-[44px] px-3.5 rounded-full bg-[#1E2430] border border-white/10 text-xs font-semibold text-[#94A3B8] active:text-white inline-flex items-center gap-1"
+              className="shrink-0 min-h-[44px] px-3 rounded-full bg-[#1E2430] border border-white/10 text-xs font-semibold text-[#94A3B8] active:text-white inline-flex items-center gap-1"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset
             </button>
           )}
         </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#0B0D12] via-[#0B0D12]/80 to-transparent" />
       </div>
 
       {/* MOBILE SWIPE-TO-CLOSE BOTTOM SHEET MODAL */}

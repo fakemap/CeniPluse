@@ -79,15 +79,15 @@ export const TopTenRail: React.FC<TopTenRailProps> = ({
             return (
               <div
                 key={`top10-${item.id}`}
-                className="relative shrink-0 snap-start flex items-end pl-7 md:pl-10 w-[44%] min-w-[154px] md:w-[215px] lg:w-[235px]"
+                className="relative shrink-0 snap-start flex items-start pl-8 md:pl-11 w-[48%] min-w-[172px] md:w-[220px] lg:w-[240px]"
               >
-                {/* Oversized Outlined Rank Numeral Tucked Behind Left Edge */}
+                {/* Oversized Outlined Rank Numeral Tucked Strictly Behind Poster (Never Overlaps Title/Genre Below) */}
                 <span
                   aria-hidden="true"
-                  className={`rank-numeral select-none pointer-events-none absolute bottom-6 z-0 font-black tabular-nums leading-[0.8] tracking-[-0.08em] transition-transform duration-300 lg:group-hover:scale-105 ${
+                  className={`rank-numeral select-none pointer-events-none absolute top-[118px] sm:top-[132px] md:top-[148px] z-0 font-black tabular-nums leading-[0.8] tracking-[-0.08em] transition-transform duration-300 lg:group-hover:scale-105 ${
                     rank === 10
-                      ? '-left-1 md:-left-1.5 text-[76px] md:text-[106px]'
-                      : 'left-0.5 md:left-1 text-[92px] md:text-[124px]'
+                      ? '-left-1 md:-left-1.5 text-[62px] md:text-[98px]'
+                      : 'left-0 md:left-0.5 text-[76px] md:text-[116px]'
                   }`}
                 >
                   {rank}

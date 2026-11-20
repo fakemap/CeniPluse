@@ -663,10 +663,23 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     return () => window.removeEventListener('message', onMessage);
   }, [mode, vidlinkEmbedUrl, enriched.id, enriched.title, enriched.backdrop, enriched.poster, activeEpisodeLabel]);
 
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const sync = () => setIsDesktopViewport(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   const isTheaterMode =
     mode === 'stream' || mode === 'embed' || (mode === 'trailer' && trailerFullPlayer);
   const bannerPreviewActive =
-    !isTheaterMode && !previewDismissed && !downloadModalOpen && heroInView && tabVisible;
+    isDesktopViewport && !isTheaterMode && !previewDismissed && !downloadModalOpen && heroInView && tabVisible;
 
   useEffect(() => {
     const onVisibility = () => setTabVisible(!document.hidden);
@@ -830,9 +843,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             className="w-24 sm:w-28 aspect-[2/3] rounded-xl object-cover bg-[#141821] border border-white/15 shrink-0 shadow-xl hidden sm:block"
           />
 
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-extrabold text-[#F8FAFC] uppercase">
+          <div className="min-w-0 flex-1 space-y-2.5 w-full">
+            <div className="flex flex-col items-start sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2">
+              <span className="px-2 py-0.5 rounded bg-white/15 border border-white/10 text-[10px] font-extrabold text-[#F8FAFC] uppercase tracking-wide shrink-0">
                 {isSeries ? 'TV Series' : enriched.quality}
               </span>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F8FAFC] tracking-tight leading-tight">
@@ -840,46 +853,67 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
               </h1>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#CBD5E1] tabular-nums">
-              <span className="font-bold text-[#10B981]">{enriched.year}</span>
-              {enriched.runtime && (
-                <>
-                  <span className="text-white/30">|</span>
-                  <span>{enriched.runtime}</span>
-                </>
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#CBD5E1] tabular-nums">
+                <span className="font-bold text-[#10B981]">{enriched.year}</span>
+                {enriched.runtime && (
+                  <>
+                    <span className="text-white/35">&bull;</span>
+                    <span>{enriched.runtime}</span>
+                  </>
+                )}
+                {enriched.country && (
+                  <>
+                    <span className="text-white/35">&bull;</span>
+                    <span>{enriched.country}</span>
+                  </>
+                )}
+              </div>
+
+              {enriched.genres.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {enriched.genres.slice(0, 4).map((g) => (
+                    <span
+                      key={g}
+                      className="px-2 py-0.5 rounded-md bg-white/[0.08] border border-white/[0.08] text-[11px] font-medium text-[#CBD5E1]"
+                    >
+                      {g}
+                    </span>
+                  ))}
+                </div>
               )}
-              <span className="text-white/30">|</span>
-              <span>{enriched.country}</span>
-              <span className="text-white/30">|</span>
-              <span className="text-[#94A3B8]">{enriched.genres.join(', ')}</span>
             </div>
 
-            <p
-              className={`text-xs sm:text-[13px] text-[#CBD5E1]/90 max-w-2xl leading-relaxed ${
-                synopsisExpanded ? '' : 'line-clamp-2'
-              }`}
-            >
-              {enriched.overview}{' '}
-              {enriched.overview && enriched.overview.length > 130 && (
-                <button
-                  type="button"
-                  onClick={() => setSynopsisExpanded((s) => !s)}
-                  className="font-bold text-[#F8FAFC] hover:text-[#00E5FF] ml-1"
+            {enriched.overview && (
+              <div className="max-w-2xl">
+                <p
+                  className={`text-xs sm:text-[13px] text-[#CBD5E1]/90 leading-relaxed ${
+                    synopsisExpanded ? '' : 'line-clamp-2'
+                  }`}
                 >
-                  {synopsisExpanded ? 'Less' : 'More >'}
-                </button>
-              )}
-            </p>
+                  {enriched.overview}
+                </p>
+                {enriched.overview.length > 120 && (
+                  <button
+                    type="button"
+                    onClick={() => setSynopsisExpanded((s) => !s)}
+                    className="mt-0.5 inline-flex items-center min-h-[40px] pr-2 text-xs font-bold text-[#00E5FF] hover:text-[#33ECFF] transition-colors"
+                  >
+                    {synopsisExpanded ? 'Show less' : 'Read more'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Primary Action Bar */}
-            <div className="pt-1.5 flex flex-wrap items-center gap-2">
+            <div className="pt-1 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
               {hasPlayableFullVideo ? (
                 <button
                   type="button"
                   onClick={handleWatchPrimary}
-                  className="min-h-[40px] px-5 rounded-md bg-[#10B981] hover:brightness-110 text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5 transition-all"
+                  className="w-full sm:w-auto h-12 sm:h-[42px] px-5 rounded-xl sm:rounded-md bg-[#10B981] hover:brightness-110 active:scale-[0.98] text-[#041811] text-sm sm:text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all shrink-0"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-4 h-4 sm:w-3.5 sm:h-3.5 fill-current" />
                   Watch Online
                 </button>
               ) : (
@@ -887,16 +921,16 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   type="button"
                   disabled={requesting}
                   onClick={handleRequestTitle}
-                  className={`min-h-[40px] px-5 rounded-md text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
+                  className={`w-full sm:w-auto h-12 sm:h-[42px] px-5 rounded-xl sm:rounded-md text-sm sm:text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all shrink-0 ${
                     hasRequested
                       ? 'bg-[#10B981]/20 border border-[#10B981]/50 text-[#10B981]'
                       : 'bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018]'
                   }`}
                 >
                   {hasRequested ? (
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <CheckCircle2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   ) : (
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   )}
                   {requesting
                     ? 'Requesting...'
@@ -908,76 +942,86 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 </button>
               )}
 
-              {activeVideoKey && (
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-2">
+                {activeVideoKey && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (mode === 'trailer' && trailerFullPlayer) {
+                        setTrailerFullPlayer(false);
+                        setMode('poster');
+                      } else {
+                        setPreviewDismissed(false);
+                        setMuted(false);
+                        setMode('trailer');
+                        setTrailerFullPlayer(true);
+                      }
+                    }}
+                    className={`min-h-[44px] sm:min-h-[42px] px-2.5 sm:px-4 rounded-xl sm:rounded-md border text-[11.5px] sm:text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                      mode === 'trailer' && trailerFullPlayer
+                        ? 'bg-[#FFB800] border-[#FFB800] text-[#1A1200]'
+                        : 'bg-[#1E2430] border-white/10 text-[#F8FAFC] hover:border-white/25'
+                    }`}
+                  >
+                    <Youtube className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {mode === 'trailer' && trailerFullPlayer ? 'Close' : 'Trailer'}
+                    </span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => {
-                    if (mode === 'trailer' && trailerFullPlayer) {
-                      setTrailerFullPlayer(false);
-                      setMode('poster');
-                    } else {
-                      setPreviewDismissed(false);
-                      setMuted(false);
-                      setMode('trailer');
-                      setTrailerFullPlayer(true);
-                    }
-                  }}
-                  className={`min-h-[40px] px-4 rounded-md border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                    mode === 'trailer' && trailerFullPlayer
-                      ? 'bg-[#FFB800] border-[#FFB800] text-[#1A1200]'
-                      : 'bg-[#1E2430] border-white/10 text-[#F8FAFC] hover:border-white/25'
+                  onClick={() => setDownloadModalOpen(true)}
+                  className="min-h-[44px] sm:min-h-[42px] px-2.5 sm:px-4 rounded-xl sm:rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-[11.5px] sm:text-xs font-bold text-[#F8FAFC] inline-flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                  <span className="truncate">Download</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onOpenAppModal}
+                  className="hidden sm:inline-flex min-h-[42px] px-4 rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-xs font-bold text-[#F8FAFC] items-center gap-1.5 transition-colors"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-[#00E5FF]" />
+                  Watch in App
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onOpenAppModal}
+                  className="hidden sm:inline-flex min-h-[42px] px-4 rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-xs font-bold text-[#F8FAFC] items-center gap-1.5 transition-colors"
+                >
+                  <Tv2 className="w-3.5 h-3.5 text-[#10B981]" />
+                  Watch on TV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onToggleWatchlist(enriched.id)}
+                  className={`min-h-[44px] sm:min-h-[42px] px-2.5 sm:px-3.5 rounded-xl sm:rounded-md border text-[11.5px] sm:text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                    !activeVideoKey ? 'col-span-2 sm:col-span-1' : ''
+                  } ${
+                    inWatchlist
+                      ? 'bg-[#00E5FF]/15 border-[#00E5FF]/50 text-[#00E5FF]'
+                      : 'bg-[#1B222C] border-white/15 text-[#F8FAFC] hover:border-white/30'
                   }`}
                 >
-                  <Youtube className="w-4 h-4" />
-                  {mode === 'trailer' && trailerFullPlayer ? 'Close Trailer' : 'Official Trailer'}
+                  {inWatchlist ? (
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">{inWatchlist ? 'Saved' : 'My List'}</span>
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setDownloadModalOpen(true)}
-                className="min-h-[40px] px-4 rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-xs font-bold text-[#F8FAFC] inline-flex items-center gap-1.5 transition-colors"
-              >
-                <Download className="w-3.5 h-3.5 text-[#10B981]" />
-                Download
-              </button>
-
-              <button
-                type="button"
-                onClick={onOpenAppModal}
-                className="hidden sm:inline-flex min-h-[40px] px-4 rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-xs font-bold text-[#F8FAFC] items-center gap-1.5 transition-colors"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-[#00E5FF]" />
-                Watch in App
-              </button>
-
-              <button
-                type="button"
-                onClick={onOpenAppModal}
-                className="hidden sm:inline-flex min-h-[40px] px-4 rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-xs font-bold text-[#F8FAFC] items-center gap-1.5 transition-colors"
-              >
-                <Tv2 className="w-3.5 h-3.5 text-[#10B981]" />
-                Watch on TV
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onToggleWatchlist(enriched.id)}
-                className={`min-h-[40px] px-3.5 rounded-md border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                  inWatchlist
-                    ? 'bg-[#00E5FF]/15 border-[#00E5FF]/50 text-[#00E5FF]'
-                    : 'bg-[#1B222C] border-white/15 text-[#F8FAFC] hover:border-white/30'
-                }`}
-              >
-                {inWatchlist ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                {inWatchlist ? 'In My List' : 'My List'}
-              </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Bottom-Right: Rating Readout & Copy Share Link */}
-        <div className="flex lg:flex-col items-center lg:items-end justify-between gap-2 shrink-0 pt-2 lg:pt-0">
+        <div className="flex lg:flex-col items-center lg:items-end justify-between gap-2 shrink-0 pt-3 mt-1 border-t border-white/[0.08] lg:border-0 lg:pt-0 lg:mt-0">
           <div className="text-left lg:text-right tabular-nums">
             <div className="inline-flex items-baseline gap-1">
               <Star className="w-5 h-5 fill-[#FFB800] text-[#FFB800] self-center" />
@@ -996,7 +1040,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           <button
             type="button"
             onClick={handleCopyShareLink}
-            className="min-h-[34px] px-3 rounded-md bg-[#1B222C] hover:bg-[#252E3C] border border-white/15 text-xs font-semibold text-[#CBD5E1] inline-flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[36px] px-4 sm:px-3 rounded-xl sm:rounded-md bg-[#1B222C] hover:bg-[#252E3C] border border-white/15 text-xs font-semibold text-[#CBD5E1] inline-flex items-center gap-1.5 transition-colors"
           >
             <Share2 className="w-3.5 h-3.5" />
             {copiedLink ? 'Link Copied' : 'Share'}
@@ -1023,7 +1067,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="hover:text-[#F8FAFC] font-medium transition-colors"
+          className="min-h-[44px] -my-2 pr-1 inline-flex items-center hover:text-[#F8FAFC] font-medium transition-colors"
         >
           Home
         </button>
@@ -1035,35 +1079,37 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       {!isTheaterMode ? (
         <section
           ref={heroSectionRef}
-          className="relative w-full overflow-hidden rounded-none md:rounded-2xl bg-[#0D1017] border-y md:border border-white/[0.08] min-h-[420px] sm:min-h-[480px] md:min-h-[520px] lg:min-h-[560px] xl:min-h-[600px] flex flex-col justify-end"
+          className="relative isolate w-full overflow-hidden rounded-none md:rounded-2xl bg-[#0D1017] border-y md:border border-white/[0.08] min-h-[440px] sm:min-h-[480px] md:min-h-[520px] lg:min-h-[560px] xl:min-h-[600px] flex flex-col justify-end"
         >
-          {/* Single Unified Full-Bleed Backdrop + Autoplay Snippet Layer (Zero Double-Iframe Leaks) */}
+          {/* Single Unified Full-Bleed Backdrop + Desktop-Only Autoplay Snippet Layer */}
           <div className="absolute inset-0 overflow-hidden bg-black">
             <img
               src={enriched.backdrop || enriched.poster}
               alt={enriched.title}
               className={`w-full h-full object-cover object-center transition-opacity duration-700 ${
-                bannerSnippetReady ? 'opacity-0' : 'opacity-100 animate-hero-zoom'
+                isDesktopViewport && bannerSnippetReady ? 'opacity-0' : 'opacity-100 animate-hero-zoom'
               }`}
             />
 
-            <SnippetPlayer
-              item={enriched}
-              active={bannerPreviewActive}
-              muted={muted}
-              variant="hero"
-              startDelayMs={300}
-              onReadyChange={setBannerSnippetReady}
-              onHasSnippetChange={setBannerHasSnippet}
-            />
+            {isDesktopViewport && (
+              <SnippetPlayer
+                item={enriched}
+                active={bannerPreviewActive}
+                muted={muted}
+                variant="hero"
+                startDelayMs={300}
+                onReadyChange={setBannerSnippetReady}
+                onHasSnippetChange={setBannerHasSnippet}
+              />
+            )}
           </div>
 
           {/* Multi-Stop Gradient Scrims Over Full-Bleed Hero */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0D1017] via-[#0D1017]/55 to-black/25" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0D1017] via-[#0D1017]/65 to-black/25" />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#0D1017]/85 via-[#0D1017]/30 to-transparent" />
 
-          {/* Floating Banner Controls */}
-          {bannerHasSnippet && !previewDismissed && (
+          {/* Floating Banner Controls (Desktop Only — Mobile uses clean artwork + Official Trailer CTA) */}
+          {isDesktopViewport && bannerHasSnippet && !previewDismissed && (
             <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
               <button
                 type="button"
@@ -1221,7 +1267,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 />
 
                 {activeEpisodeLabel && (
-                  <div className="pointer-events-none absolute top-3 left-3 z-20 px-3 py-1 rounded-full bg-[#0B0D12]/85 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] font-bold text-[#00E5FF]">
+                  <div className="hidden sm:block pointer-events-none absolute top-3 left-3 z-20 px-3 py-1 rounded-full bg-[#0B0D12]/85 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] font-bold text-[#00E5FF] max-w-[55%] truncate">
                     Now Playing: {activeEpisodeLabel}
                   </div>
                 )}
@@ -1497,11 +1543,11 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         {/* LEFT MAIN COLUMN */}
         <div className="min-w-0 space-y-8">
           {/* Sub-navigation Jump Tabs */}
-          <div className="flex items-center gap-6 border-b border-white/[0.08]">
+          <div className="flex items-center gap-4 sm:gap-6 border-b border-white/[0.08] overflow-x-auto scrollbar-hide whitespace-nowrap">
             <button
               type="button"
               onClick={() => scrollToSection('episodes', episodesSectionRef)}
-              className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
+              className={`shrink-0 min-h-[44px] inline-flex items-center text-[13px] sm:text-sm font-bold border-b-2 transition-colors ${
                 activeTab === 'episodes'
                   ? 'border-[#F8FAFC] text-[#F8FAFC]'
                   : 'border-transparent text-[#94A3B8] hover:text-[#F8FAFC]'
@@ -1512,7 +1558,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('cast', castSectionRef)}
-              className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
+              className={`shrink-0 min-h-[44px] inline-flex items-center text-[13px] sm:text-sm font-bold border-b-2 transition-colors ${
                 activeTab === 'cast'
                   ? 'border-[#F8FAFC] text-[#F8FAFC]'
                   : 'border-transparent text-[#94A3B8] hover:text-[#F8FAFC]'
@@ -1523,13 +1569,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('reviews', reviewsSectionRef)}
-              className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
+              className={`shrink-0 min-h-[44px] inline-flex items-center text-[13px] sm:text-sm font-bold border-b-2 transition-colors ${
                 activeTab === 'reviews'
                   ? 'border-[#F8FAFC] text-[#F8FAFC]'
                   : 'border-transparent text-[#94A3B8] hover:text-[#F8FAFC]'
               }`}
             >
-              User Review ({reviews.length})
+              Reviews ({reviews.length})
             </button>
           </div>
 
@@ -1808,7 +1854,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           setActiveSourceIdx(idx);
                           setMode('stream');
                         }}
-                        className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                        className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
                           mode === 'stream' && activeSourceIdx === idx
                             ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
                             : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
@@ -1829,7 +1875,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                             setVidlinkPlayerType('default');
                             setMode('embed');
                           }}
-                          className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                          className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
                             mode === 'embed' && vidlinkPlayerType === 'default'
                               ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                               : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
@@ -1851,7 +1897,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                             setVidlinkPlayerType('jw');
                             setMode('embed');
                           }}
-                          className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                          className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
                             mode === 'embed' && vidlinkPlayerType === 'jw'
                               ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                               : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
@@ -2090,7 +2136,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           <h2 className="text-base font-extrabold text-[#F8FAFC]">More like this</h2>
 
           {moreLikeThis.length > 0 ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-2 gap-3">
               {moreLikeThis.map((rec) => (
                 <button
                   key={rec.id}
@@ -2116,7 +2162,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       {rec.rating.toFixed(1)}
                     </span>
                   </div>
-                  <div className="text-xs font-semibold text-[#CBD5E1] group-hover:text-[#00E5FF] line-clamp-1 transition-colors">
+                  <div className="text-xs font-semibold text-[#CBD5E1] group-hover:text-[#00E5FF] line-clamp-2 md:line-clamp-1 leading-snug transition-colors">
                     {rec.title}
                   </div>
                 </button>

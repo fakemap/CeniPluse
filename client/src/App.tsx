@@ -927,7 +927,7 @@ export const App: React.FC = () => {
           {/* 1B) NEWLY ADDED MOVIES & SERIES */}
           {draftedCatalog.length > 0 && (
             <ContentRail
-              title="Newly Added &amp; Trending Releases"
+              title="New & Trending"
               items={draftedCatalog.slice(0, 24)}
               watchlistIds={watchlistIds}
               onMore={() =>
@@ -1100,7 +1100,7 @@ export const App: React.FC = () => {
               </div>
 
               {spotlightMovies.length > 0 ? (
-                <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+                <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
                   {spotlightMovies.map((item) => (
                     <PosterCard
                       key={item.id}
@@ -1237,7 +1237,7 @@ export const App: React.FC = () => {
 
           {directoryItems.length > 0 ? (
             <>
-              <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+              <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
                 {directoryItems.map((item) => (
                   <PosterCard
                     key={item.id}
@@ -1314,7 +1314,7 @@ export const App: React.FC = () => {
           </div>
 
           {watchlistItems.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+            <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-3 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
               {watchlistItems.map((item) => (
                 <PosterCard
                   key={item.id}
