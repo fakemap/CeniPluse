@@ -1032,13 +1032,15 @@ async function streamHlsAsVideoDownload({
     });
   }
 
-  req.on('close', () => {
-    aborted = true;
-    if (ff && !ff.killed) {
-      try {
-        ff.kill('SIGKILL');
-      } catch {
-        // ignore
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      aborted = true;
+      if (ff && !ff.killed) {
+        try {
+          ff.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
       }
     }
   });
