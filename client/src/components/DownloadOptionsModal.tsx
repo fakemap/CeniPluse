@@ -230,63 +230,85 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     [resolvedModalSources]
   );
 
-  // Build standardized 1080P, 720P, 480P, 360P quality cards backed by real download endpoints
-  const qualityOptions: QualityOption[] = useMemo(() => {
-    const tiers = [
-      { key: '1080', label: '1080P', fallbackSize: '890 MB', recommended: true },
-      { key: '720', label: '720P', fallbackSize: '485 MB', recommended: false },
-      { key: '480', label: '480P', fallbackSize: '240 MB', recommended: false },
-      { key: '360', label: '360P', fallbackSize: '165 MB', recommended: false },
-    ];
-
-    if (downloadableSources.length === 0) {
-      return tiers.map((t) => ({
-        id: `tier_${t.key}`,
-        label: t.label,
-        format: 'MP4',
-        size: t.fallbackSize,
-        recommended: t.recommended,
-      }));
+  // Parse runtime seconds from item.duration (e.g. "2h 32m", "152m", "48 min") for accurate size estimates
+  const runtimeSec = useMemo(() => {
+    const raw = String(item.duration || '').toLowerCase();
+    const hMatch = raw.match(/(\d+)\s*h/);
+    const mMatch = raw.match(/(\d+)\s*m/);
+    let totalMin = 0;
+    if (hMatch) totalMin += Number(hMatch[1]) * 60;
+    if (mMatch) totalMin += Number(mMatch[1]);
+    if (totalMin <= 0) {
+      const plainNum = raw.match(/(\d{2,3})/);
+      if (plainNum) totalMin = Number(plainNum[1]);
     }
+    if (totalMin <= 0) totalMin = isSeries ? 45 : 110;
+    return totalMin * 60;
+  }, [item.duration, isSeries]);
 
-    // Prefer direct MP4 sources first when matching a resolution tier
-    const findBestSourceForTier = (tierKey: string): MediaSource => {
-      const exactMp4 = downloadableSources.find(
-        (s) => s.type === 'mp4' && s.quality.toLowerCase().includes(tierKey)
-      );
-      if (exactMp4) return exactMp4;
+  const formatEstBytes = (bytes: number): string => {
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1024) return `~${(mb / 1024).toFixed(2)} GB`;
+    return `~${Math.round(mb)} MB`;
+  };
 
-      const exactAny = downloadableSources.find((s) =>
-        s.quality.toLowerCase().includes(tierKey)
-      );
-      if (exactAny) return exactAny;
-
-      const anyMp4 = downloadableSources.find((s) => s.type === 'mp4');
-      return anyMp4 || downloadableSources[0];
+  // Build quality cards from the REAL available server resolutions & accurate sizes
+  const qualityOptions: QualityOption[] = useMemo(() => {
+    const parseHeight = (q: string): number => {
+      const low = String(q || '').toLowerCase();
+      if (low.includes('4k') || low.includes('2160')) return 2160;
+      const m = low.match(/(\d{3,4})/);
+      return m ? Number(m[1]) : 720;
     };
 
-    return tiers.map((t) => {
-      const matched = findBestSourceForTier(t.key);
-      const exactMatch = matched.quality.toLowerCase().includes(t.key);
+    if (downloadableSources.length === 0) {
+      return [
+        { id: 'tier_1080', label: '1080P', format: 'MP4', size: '~1.4 GB', recommended: true },
+        { id: 'tier_720', label: '720P', format: 'MP4', size: '~800 MB', recommended: false },
+        { id: 'tier_480', label: '480P', format: 'MP4', size: '~450 MB', recommended: false },
+      ];
+    }
+
+    // Deduplicate by resolution, preferring direct MP4 over HLS for the same resolution
+    const byRes = new Map<number, MediaSource>();
+    for (const src of downloadableSources) {
+      const h = parseHeight(src.quality);
+      const existing = byRes.get(h);
+      if (!existing || (existing.type !== 'mp4' && src.type === 'mp4')) {
+        byRes.set(h, src);
+      }
+    }
+
+    const sortedHeights = Array.from(byRes.keys()).sort((a, b) => b - a);
+    return sortedHeights.map((h, idx) => {
+      const matched = byRes.get(h)!;
+      const label = h >= 2160 ? '4K' : `${h}P`;
       const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
       const dlWithQuality = rawDl.includes('quality=')
-        ? rawDl.replace(/quality=\d+/i, `quality=${t.key}`)
-        : `${rawDl}&quality=${t.key}`;
+        ? rawDl.replace(/quality=\d+/i, `quality=${h}`)
+        : `${rawDl}&quality=${h}`;
+
+      const bw = Number((matched as MediaSource & { bandwidth?: number }).bandwidth || 0);
+      let displaySize = matched.size || '';
+      if (matched.type === 'hls' && bw > 0) {
+        displaySize = formatEstBytes((bw / 8) * runtimeSec);
+      } else if (!displaySize || /adaptive/i.test(displaySize)) {
+        // Fallback bitrate-based estimate using actual movie runtime
+        const estBps = h >= 1080 ? 2_200_000 : h >= 720 ? 1_200_000 : h >= 480 ? 680_000 : 400_000;
+        displaySize = formatEstBytes((estBps / 8) * runtimeSec);
+      }
 
       return {
-        id: `q_${t.key}_${matched.id}`,
-        label: t.label,
-        format: matched.type === 'hls' ? 'TS / MP4' : 'MP4',
-        size:
-          exactMatch && matched.size && !matched.size.toLowerCase().includes('adaptive')
-            ? matched.size
-            : t.fallbackSize,
-        recommended: t.recommended,
+        id: `q_${h}_${matched.id}`,
+        label,
+        format: matched.type === 'hls' ? 'TS' : 'MP4',
+        size: displaySize,
+        recommended: idx === 0,
         downloadUrl: dlWithQuality,
         sourceType: matched.type === 'hls' ? 'hls' : 'mp4',
       };
     });
-  }, [downloadableSources]);
+  }, [downloadableSources, runtimeSec]);
 
   // Build subtitle options from real resolved subtitles
   const subtitleOptions: SubtitleOptionItem[] = useMemo(() => {
@@ -336,7 +358,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   useEffect(() => {
     if (qualityOptions.length > 0) {
       if (dataSaver) {
-        setSelectedQuality('360P');
+        setSelectedQuality(qualityOptions[qualityOptions.length - 1].label);
       } else if (!qualityOptions.some((q) => q.label === selectedQuality)) {
         setSelectedQuality(qualityOptions[0].label);
       }
@@ -851,7 +873,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           <div className="pt-2 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-3">
             <span className="text-xs text-[#94A3B8]">
               {isTitleAvailable
-                ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeSubLabel}`
+                ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeQualityObj.size}`
                 : 'No downloadable mirror linked yet — submit a request so we prioritize this title.'}
             </span>
 

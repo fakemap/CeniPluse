@@ -473,29 +473,38 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
 
         // Extract variant streams (#EXT-X-STREAM-INF:...RESOLUTION=WxH)
         const lines = mText.split('\n');
-        const seenRes = new Set(['1080p']);
+        const parsedVariants = [];
+        const seenRes = new Set();
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim();
           if (line.startsWith('#EXT-X-STREAM-INF:')) {
             const resMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
+            const avgBwMatch = line.match(/AVERAGE-BANDWIDTH=(\d+)/i);
+            const bwMatch = line.match(/(?:^|,)BANDWIDTH=(\d+)/i);
+            const bandwidth = Number(avgBwMatch?.[1] || bwMatch?.[1] || 0);
             const height = resMatch ? Number(resMatch[1]) : 0;
             const nextUri = (lines[i + 1] || '').trim();
             if (height > 0 && nextUri && !nextUri.startsWith('#')) {
               const qualLabel = `${height}p`;
               if (!seenRes.has(qualLabel)) {
                 seenRes.add(qualLabel);
+                // Estimate for a typical 100-min film; client refines with actual title runtime
+                const estBytes = bandwidth > 0 ? Math.round((bandwidth / 8) * 6000) : 0;
                 const estSize =
-                  height >= 1080
-                    ? '890 MB'
+                  estBytes > 0
+                    ? `~${formatBytes(estBytes)}`
+                    : height >= 1080
+                    ? '~1.4 GB'
                     : height >= 720
-                    ? '540 MB'
+                    ? '~800 MB'
                     : height >= 480
-                    ? '265 MB'
-                    : '165 MB';
-                sources.push({
+                    ? '~450 MB'
+                    : '~250 MB';
+                parsedVariants.push({
                   quality: qualLabel,
                   type: 'hls',
                   size: estSize,
+                  bandwidth,
                   url: masterProxied,
                   downloadUrl: `${masterProxied}&download=1&quality=${height}`,
                 });
@@ -513,6 +522,10 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
               });
             }
           }
+        }
+        if (parsedVariants.length > 0) {
+          sources.length = 0;
+          sources.push(...parsedVariants);
         }
       }
     } catch {
@@ -721,6 +734,7 @@ router.get('/resolve', async (req, res) => {
       quality: qual,
       type: src.type === 'mp4' ? 'mp4' : 'hls',
       size: src.size || (src.type === 'mp4' ? 'Direct MP4' : 'Adaptive HLS'),
+      bandwidth: src.bandwidth || 0,
       codec: src.codec || (src.type === 'mp4' ? 'MP4' : 'HLS'),
       url: src.url,
       downloadUrl: src.downloadUrl || `${src.url}&download=1`,
