@@ -983,6 +983,86 @@ async function fetchDecryptedSegment(seg, customHeaders) {
   return segBuf;
 }
 
+// Standard MPEG-2 CRC32 (poly 0x04C11DB7, MSB-first) for clean PAT/PMT generation
+function mpegCrc32(buf) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i] << 24;
+    for (let b = 0; b < 8; b++) {
+      crc = (crc & 0x80000000) ? ((crc << 1) ^ 0x04c11db7) >>> 0 : (crc << 1) >>> 0;
+    }
+  }
+  return crc >>> 0;
+}
+
+function buildPatPacket(pmtPid = 0x1000, cc = 0) {
+  const pkt = Buffer.alloc(188, 0xff);
+  pkt[0] = 0x47;
+  pkt[1] = 0x40;
+  pkt[2] = 0x00;
+  pkt[3] = 0x10 | (cc & 0x0f);
+  pkt[4] = 0x00;
+  const section = Buffer.from([
+    0x00, 0xb0, 0x0d, 0x00, 0x01, 0xc1, 0x00, 0x00, 0x00, 0x01,
+    0xe0 | ((pmtPid >> 8) & 0x1f), pmtPid & 0xff,
+  ]);
+  section.copy(pkt, 5);
+  pkt.writeUInt32BE(mpegCrc32(section), 5 + section.length);
+  return pkt;
+}
+
+function buildPmtPacket(pmtPid = 0x1000, videoPid = 0x0100, audioPid = 0x0101, cc = 0) {
+  const pkt = Buffer.alloc(188, 0xff);
+  pkt[0] = 0x47;
+  pkt[1] = 0x40 | ((pmtPid >> 8) & 0x1f);
+  pkt[2] = pmtPid & 0xff;
+  pkt[3] = 0x10 | (cc & 0x0f);
+  pkt[4] = 0x00;
+  const section = Buffer.from([
+    0x02, 0xb0, 0x17, 0x00, 0x01, 0xc1, 0x00, 0x00,
+    0xe0 | ((videoPid >> 8) & 0x1f), videoPid & 0xff,
+    0xf0, 0x00,
+    // Video: H.264 (0x1B) on videoPid
+    0x1b, 0xe0 | ((videoPid >> 8) & 0x1f), videoPid & 0xff, 0xf0, 0x00,
+    // Audio: AAC ADTS (0x0F) on audioPid
+    0x0f, 0xe0 | ((audioPid >> 8) & 0x1f), audioPid & 0xff, 0xf0, 0x00,
+  ]);
+  section.copy(pkt, 5);
+  pkt.writeUInt32BE(mpegCrc32(section), 5 + section.length);
+  return pkt;
+}
+
+/**
+ * Combines separate Video-only and Audio-only MPEG-TS segments (which often collide on PID 0x0100)
+ * into a single valid MPEG-TS stream with Video on PID 0x0100 and Audio on PID 0x0101 + unified PAT/PMT.
+ */
+function combineVideoAudioTs(vBuf, aBuf, seq = 0) {
+  if (!aBuf || aBuf.length === 0) return vBuf;
+  const out = [
+    buildPatPacket(0x1000, seq & 0x0f),
+    buildPmtPacket(0x1000, 0x0100, 0x0101, seq & 0x0f),
+  ];
+  for (let off = 0; off + 188 <= vBuf.length; off += 188) {
+    if (vBuf[off] !== 0x47) continue;
+    const pid = ((vBuf[off + 1] & 0x1f) << 8) | vBuf[off + 2];
+    if (pid === 0 || pid === 17 || pid === 0x1000) continue;
+    const pkt = Buffer.from(vBuf.subarray(off, off + 188));
+    pkt[1] = (pkt[1] & 0xe0) | 0x01;
+    pkt[2] = 0x00;
+    out.push(pkt);
+  }
+  for (let off = 0; off + 188 <= aBuf.length; off += 188) {
+    if (aBuf[off] !== 0x47) continue;
+    const pid = ((aBuf[off + 1] & 0x1f) << 8) | aBuf[off + 2];
+    if (pid === 0 || pid === 17 || pid === 0x1000) continue;
+    const pkt = Buffer.from(aBuf.subarray(off, off + 188));
+    pkt[1] = (pkt[1] & 0xe0) | 0x01;
+    pkt[2] = 0x01;
+    out.push(pkt);
+  }
+  return Buffer.concat(out);
+}
+
 /**
  * Pure-JavaScript HLS (.m3u8) -> Fragmented MP4 (.mp4) live downloader using mux.js.
  * Zero child processes, zero external binaries (works reliably on Bot-Hosting.net, Linux, Docker, Windows).
@@ -1122,16 +1202,14 @@ async function streamHlsAsVideoDownload({
   for (let i = 0; i < videoSegments.length; i++) {
     if (aborted || res.writableEnded) break;
     try {
-      const vBuf = await fetchDecryptedSegment(videoSegments[i], customHeaders);
-      transmuxer.push(new Uint8Array(vBuf));
-      if (audioSegments[i]) {
-        try {
-          const aBuf = await fetchDecryptedSegment(audioSegments[i], customHeaders);
-          transmuxer.push(new Uint8Array(aBuf));
-        } catch {
-          // non-fatal if an audio segment drops
-        }
-      }
+      const [vBuf, aBuf] = await Promise.all([
+        fetchDecryptedSegment(videoSegments[i], customHeaders),
+        audioSegments[i]
+          ? fetchDecryptedSegment(audioSegments[i], customHeaders).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const combinedTs = combineVideoAudioTs(vBuf, aBuf, i);
+      transmuxer.push(new Uint8Array(combinedTs));
       transmuxer.flush();
       await flushWrites();
     } catch {
