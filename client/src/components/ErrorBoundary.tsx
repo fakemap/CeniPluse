@@ -27,11 +27,33 @@ export class ErrorBoundary extends React.Component<
     };
   }
 
+  static isChunkLoadError(message: string): boolean {
+    return /mime type|dynamically imported module|importing a module script failed|chunkloaderror|loading chunk/i.test(
+      message || ''
+    );
+  }
+
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[CinePulse ErrorBoundary]', error, info.componentStack);
+    const msg = error?.message || '';
+    if (ErrorBoundary.isChunkLoadError(msg)) {
+      try {
+        const lastReload = Number(sessionStorage.getItem('cp_chunk_reload_at') || 0);
+        if (Date.now() - lastReload > 15000) {
+          sessionStorage.setItem('cp_chunk_reload_at', String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
   }
 
   handleReset = () => {
+    if (ErrorBoundary.isChunkLoadError(this.state.errorMessage)) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, errorMessage: '' });
   };
 
