@@ -424,7 +424,14 @@ export const backendApi = {
       const viteEnv = (
         import.meta as ImportMeta & { env?: Record<string, string | undefined> }
       ).env;
-      const scraperBase = String(viteEnv?.VITE_SCRAPER_API_BASE || '')
+      const isLocalClient =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname.startsWith('192.168.') ||
+          window.location.hostname.startsWith('10.'));
+      const defaultRemoteScraper = isLocalClient ? '' : 'https://fjiklhy643.apps.bot-hosting.cloud';
+      const scraperBase = String(viteEnv?.VITE_SCRAPER_API_BASE || defaultRemoteScraper)
         .trim()
         .replace(/\/+$/, '');
       const prefixUrl = (u?: string) =>

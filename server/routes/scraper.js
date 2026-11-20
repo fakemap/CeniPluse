@@ -13,7 +13,15 @@ let FFMPEG_PATH = null;
 try {
   const candidate = require('ffmpeg-static');
   if (candidate && fs.existsSync(candidate)) {
-    FFMPEG_PATH = candidate;
+    try {
+      fs.chmodSync(candidate, 0o755);
+    } catch {
+      // ignore on Windows
+    }
+    const ver = spawnSync(candidate, ['-version'], { stdio: 'ignore' });
+    if (ver.status === 0) {
+      FFMPEG_PATH = candidate;
+    }
   }
 } catch {
   FFMPEG_PATH = null;
@@ -1010,9 +1018,12 @@ async function streamHlsAsVideoDownload({
         'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
       ],
-      { stdio: ['pipe', 'pipe', 'ignore'] }
+      { stdio: ['pipe', 'pipe', 'pipe'] }
     );
     ff.stdout.pipe(res);
+    ff.stderr.on('data', (chunk) => {
+      console.warn('[FFmpeg remux]', chunk.toString('utf8').trim());
+    });
     ff.stdin.on('error', () => {
       aborted = true;
     });

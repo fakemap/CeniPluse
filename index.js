@@ -8,11 +8,21 @@ const { spawnSync } = require('child_process');
 // where npm blocks postinstall scripts by default.
 try {
   const ffmpegStaticPath = require('ffmpeg-static');
-  if (ffmpegStaticPath && !fs.existsSync(ffmpegStaticPath)) {
-    const installScript = path.join(__dirname, 'node_modules', 'ffmpeg-static', 'install.js');
-    if (fs.existsSync(installScript)) {
-      console.log('[Startup] Downloading ffmpeg-static binary for live MP4 remuxing...');
-      spawnSync(process.execPath, [installScript], { stdio: 'inherit' });
+  if (ffmpegStaticPath) {
+    const stat = fs.existsSync(ffmpegStaticPath) ? fs.statSync(ffmpegStaticPath) : null;
+    if (!stat || stat.size < 1024 * 1024) {
+      const installScript = path.join(__dirname, 'node_modules', 'ffmpeg-static', 'install.js');
+      if (fs.existsSync(installScript)) {
+        console.log('[Startup] Downloading ffmpeg-static binary for live MP4 remuxing...');
+        spawnSync(process.execPath, [installScript], { stdio: 'inherit' });
+      }
+    }
+    if (fs.existsSync(ffmpegStaticPath)) {
+      try {
+        fs.chmodSync(ffmpegStaticPath, 0o755);
+      } catch {
+        // ignore on Windows
+      }
     }
   }
 } catch {
