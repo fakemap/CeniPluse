@@ -13,6 +13,7 @@ import type {
 } from './types/media';
 import { CATEGORY_CARDS, INITIAL_CATALOG } from './data/catalog';
 import { backendApi } from './services/api';
+import { hasVidLinkSupport } from './utils/vidlink';
 import { AppShell } from './components/AppShell';
 import { HeroCarousel } from './components/HeroCarousel';
 import { CategoryCards } from './components/CategoryCards';
@@ -255,7 +256,7 @@ export const App: React.FC = () => {
   };
 
   const handlePlayItem = (item: MediaItem) => {
-    if (item.sources.length > 0) {
+    if (item.sources.length > 0 || hasVidLinkSupport(item)) {
       recordPlayStart(item);
     }
     setSelectedMedia({ item, autoPlay: true });
@@ -549,7 +550,7 @@ export const App: React.FC = () => {
   );
 
   const continueWatchingEntries = useMemo(() => {
-    const playableCatalog = catalog.filter((m) => m.sources.length > 0);
+    const playableCatalog = catalog.filter((m) => m.sources.length > 0 || hasVidLinkSupport(m));
     return Object.values(watchProgressMap)
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
       .map((progress) => {

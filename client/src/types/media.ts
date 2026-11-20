@@ -103,6 +103,7 @@ export interface EpisodeItem {
 export interface MediaItem {
   id: string;
   tmdbId?: number | null;
+  malId?: number | null;
   title: string;
   type: MediaType;
   year: number;

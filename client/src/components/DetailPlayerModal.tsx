@@ -26,6 +26,7 @@ import type {
   SeasonSummary,
 } from '../types/media';
 import { backendApi, mapTmdbToMediaItem } from '../services/api';
+import { hasVidLinkSupport, resolveVidLinkEmbedUrl } from '../utils/vidlink';
 
 interface DetailPlayerModalProps {
   item: MediaItem;
@@ -58,6 +59,9 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
   const [seasons, setSeasons] = useState<SeasonSummary[]>(item.seasons || []);
   const [selectedSeasonNum, setSelectedSeasonNum] = useState<number>(
     item.seasons?.[0]?.seasonNumber || 1
+  );
+  const [selectedEpNum, setSelectedEpNum] = useState<number>(
+    item.seasons?.[0]?.episodes?.[0]?.episodeNumber || 1
   );
   const [episodes, setEpisodes] = useState<EpisodeItem[]>(
     item.seasons?.[0]?.episodes || []
@@ -129,7 +133,7 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
       setLoadingDetails(false);
       if (autoPlayVideo) {
         if (item.sources.length > 0) setMode('stream');
-        else if (item.embedUrl) setMode('embed');
+        else if (hasVidLinkSupport(item)) setMode('embed');
         else if (item.trailerYoutubeId) setMode('trailer');
         else setMode('poster');
       } else {
@@ -146,6 +150,7 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
 
       if (!det) {
         if (autoPlayVideo && item.sources.length > 0) setMode('stream');
+        else if (autoPlayVideo && hasVidLinkSupport(item)) setMode('embed');
         return;
       }
 
@@ -183,11 +188,13 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
         setSelectedSeasonNum(det.seasons[0].seasonNumber);
       }
 
-      // Auto-play ONLY the real matching video for THIS title:
-      // 1) Real full video if available/bound, else 2) Real official YouTube trailer for THIS exact title
+      // Auto-play the full video:
+      // 1) Custom/local bound stream if available, else 2) VidLink stream for TMDB/MAL titles, else 3) Official YouTube trailer
       if (autoPlayVideo) {
         if (mergedSources.length > 0) {
           setMode('stream');
+        } else if (hasVidLinkSupport(item)) {
+          setMode('embed');
         } else if (bestTrailer) {
           setMode('trailer');
         }
@@ -362,10 +369,17 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
     }
   };
 
+  const canEmbedVidLink = hasVidLinkSupport(enriched);
+  const resolvedEmbedUrl = resolveVidLinkEmbedUrl({
+    item: enriched,
+    season: selectedSeasonNum,
+    episode: selectedEpNum,
+  });
+
   const handlePlayPrimary = () => {
     if (activeSources.length > 0) {
       setMode('stream');
-    } else if (enriched.embedUrl) {
+    } else if (canEmbedVidLink) {
       setMode('embed');
     } else if (activeVideoKey) {
       setMode('trailer');
@@ -375,13 +389,21 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
   };
 
   const handlePlayEpisode = (ep: EpisodeItem) => {
+    setSelectedEpNum(ep.episodeNumber);
+    setActiveEpisodeLabel(
+      `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(
+        2,
+        '0'
+      )} — ${ep.title}`
+    );
     if (ep.sources && ep.sources.length > 0) {
       setActiveSources(ep.sources);
       setActiveSourceIdx(0);
-      setActiveEpisodeLabel(`S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')} — ${ep.title}`);
       setMode('stream');
+    } else if (canEmbedVidLink) {
+      setActiveSources([]);
+      setMode('embed');
     } else {
-      // Never play an unrelated video — let the user bind a real episode file/URL right away!
       setBindTarget({
         title: `${enriched.title} — S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}: ${ep.title}`,
         season: ep.seasonNumber,
@@ -429,7 +451,7 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
     }
   };
 
-  const hasPlayableFullVideo = activeSources.length > 0 || Boolean(enriched.embedUrl);
+  const hasPlayableFullVideo = activeSources.length > 0 || canEmbedVidLink;
 
   return (
     <div
@@ -464,6 +486,18 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
                     >
                       Retry Stream
                     </button>
+                    {canEmbedVidLink && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStreamError('');
+                          setMode('embed');
+                        }}
+                        className="min-h-[44px] px-4 rounded-full bg-[#10B981] text-[#041811] text-xs font-extrabold"
+                      >
+                        Switch to VidLink Cloud
+                      </button>
+                    )}
                     {activeVideoKey && (
                       <button
                         type="button"
@@ -480,13 +514,14 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
                 </div>
               )}
             </>
-          ) : mode === 'embed' && enriched.embedUrl ? (
+          ) : mode === 'embed' && resolvedEmbedUrl ? (
             <iframe
-              key={enriched.embedUrl}
-              src={enriched.embedUrl}
+              key={resolvedEmbedUrl}
+              src={resolvedEmbedUrl}
               title={enriched.title}
-              allow="autoplay; fullscreen; picture-in-picture"
+              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
               allowFullScreen
+              frameBorder={0}
               className="w-full h-full border-0 bg-black"
             />
           ) : mode === 'trailer' && activeVideoKey ? (

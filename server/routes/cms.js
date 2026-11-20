@@ -1298,7 +1298,8 @@ router.post('/admin/titles', (req, res) => {
 
   const created = store.upsertCmsTitle({
     id,
-    tmdbId: null,
+    tmdbId: b.tmdbId ? Number(b.tmdbId) : null,
+    malId: b.malId ? Number(b.malId) : null,
     type,
     status: 'draft',
     featured: false,
@@ -1485,6 +1486,24 @@ router.post('/admin/titles/:id/unpublish', (req, res) => {
   const title = store.getCmsTitleById(req.params.id);
   if (!title) return res.status(404).json({ error: 'Title not found' });
   title.status = 'draft';
+  const saved = store.upsertCmsTitle(title);
+  res.json({ ...saved, stats: computeTitleStats(saved) });
+});
+
+// PATCH /api/cms/admin/titles/:id/metadata - Update MAL ID or TMDB ID on an existing title
+router.patch('/admin/titles/:id/metadata', (req, res) => {
+  const title = store.getCmsTitleById(req.params.id);
+  if (!title) return res.status(404).json({ error: 'Title not found' });
+
+  if (req.body.malId !== undefined) {
+    const num = Number(req.body.malId);
+    title.malId = num > 0 ? Math.floor(num) : null;
+  }
+  if (req.body.tmdbId !== undefined) {
+    const num = Number(req.body.tmdbId);
+    title.tmdbId = num > 0 ? Math.floor(num) : null;
+  }
+
   const saved = store.upsertCmsTitle(title);
   res.json({ ...saved, stats: computeTitleStats(saved) });
 });

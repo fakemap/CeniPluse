@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Play, Volume2, VolumeX, Star, Plus, Check, Info } from 'lucide-react';
 import type { MediaItem } from '../types/media';
+import { hasVidLinkSupport } from '../utils/vidlink';
 import { SnippetPlayer } from './SnippetPlayer';
 
 interface HoverPreviewCardProps {
@@ -174,7 +175,7 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              if (item.sources.length > 0 || item.trailerYoutubeId) {
+              if (item.sources.length > 0 || hasVidLinkSupport(item) || item.trailerYoutubeId) {
                 onPlay(item);
               } else {
                 onSelect(item);
@@ -183,7 +184,7 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
             className="flex-1 h-9 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition-all"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            {item.sources.length > 0
+            {item.sources.length > 0 || hasVidLinkSupport(item)
               ? 'Play Now'
               : item.trailerYoutubeId
               ? 'Trailer & Request'

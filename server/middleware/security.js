@@ -60,7 +60,7 @@ function securityHeaders(req, res, next) {
       "img-src 'self' https: http: data: blob:",
       "media-src 'self' https: http: blob:",
       "connect-src 'self' https: http:",
-      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
+      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://vidlink.pro https://*.vidlink.pro",
       "worker-src 'self' blob:",
     ].join('; ')
   );

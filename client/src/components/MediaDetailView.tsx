@@ -19,6 +19,8 @@ import {
   MessageSquarePlus,
   Maximize2,
   Minimize2,
+  Server,
+  Subtitles,
   X,
 } from 'lucide-react';
 import type {
@@ -31,6 +33,13 @@ import type {
   UserReviewItem,
 } from '../types/media';
 import { backendApi, mapTmdbToMediaItem } from '../services/api';
+import {
+  hasVidLinkSupport,
+  isAnimeMedia,
+  resolveVidLinkEmbedUrl,
+  type VidLinkAnimeAudio,
+  type VidLinkPlayerType,
+} from '../utils/vidlink';
 import { DownloadOptionsModal } from './DownloadOptionsModal';
 import { SnippetPlayer } from './SnippetPlayer';
 
@@ -70,7 +79,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 }) => {
   const [enriched, setEnriched] = useState<MediaItem>(item);
   const [loadingDetails, setLoadingDetails] = useState(Boolean(item.tmdbId));
-  const [mode, setMode] = useState<'poster' | 'stream' | 'trailer'>('poster');
+  const [mode, setMode] = useState<'poster' | 'stream' | 'embed' | 'trailer'>('poster');
   const [trailerFullPlayer, setTrailerFullPlayer] = useState(false);
   const [muted, setMuted] = useState(true);
   const [bannerSnippetReady, setBannerSnippetReady] = useState(false);
@@ -81,6 +90,21 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     typeof document !== 'undefined' ? !document.hidden : true
   );
   const [activeVideoKey, setActiveVideoKey] = useState<string>(item.trailerYoutubeId || '');
+
+  // VidLink (vidlink.pro) Embed Player State & Customization Controls
+  const [vidlinkPlayerType, setVidlinkPlayerType] = useState<VidLinkPlayerType>('default');
+  const [animeAudioType, setAnimeAudioType] = useState<VidLinkAnimeAudio>('sub');
+  const [malIdOverride, setMalIdOverride] = useState<string>(() => {
+    if (item.malId) return String(item.malId);
+    try {
+      return localStorage.getItem(`cinepulse_mal_${item.id}`) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [externalSubUrl, setExternalSubUrl] = useState<string>('');
+  const [externalSubLabel, setExternalSubLabel] = useState<string>('English');
+  const [showSubConfig, setShowSubConfig] = useState<boolean>(false);
 
   const [activeSources, setActiveSources] = useState<MediaSource[]>(item.sources || []);
   const [activeSourceIdx, setActiveSourceIdx] = useState(0);
@@ -158,7 +182,19 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     setBannerSnippetReady(false);
     setBannerHasSnippet(false);
     setPreviewDismissed(false);
-    setMuted(!(autoPlayVideo && item.sources.length > 0));
+    setShowSubConfig(false);
+
+    try {
+      const savedMal = item.malId
+        ? String(item.malId)
+        : localStorage.getItem(`cinepulse_mal_${item.id}`) || '';
+      setMalIdOverride(savedMal);
+    } catch {
+      setMalIdOverride(item.malId ? String(item.malId) : '');
+    }
+
+    const canAutoEmbed = hasVidLinkSupport(item);
+    setMuted(!(autoPlayVideo && (item.sources.length > 0 || canAutoEmbed)));
 
     try {
       const saved = JSON.parse(localStorage.getItem('cinepulse_requested_ids') || '[]');
@@ -171,6 +207,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       setLoadingDetails(false);
       if (autoPlayVideo && item.sources.length > 0) {
         setMode('stream');
+        setMuted(false);
+      } else if (autoPlayVideo && canAutoEmbed) {
+        setMode('embed');
         setMuted(false);
       } else {
         setMode('poster');
@@ -188,6 +227,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       if (!det) {
         if (autoPlayVideo && item.sources.length > 0) {
           setMode('stream');
+          setMuted(false);
+        } else if (autoPlayVideo && canAutoEmbed) {
+          setMode('embed');
           setMuted(false);
         } else {
           setMode('poster');
@@ -232,6 +274,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
       if (autoPlayVideo && mergedSources.length > 0) {
         setMode('stream');
+        setMuted(false);
+      } else if (autoPlayVideo && canAutoEmbed) {
+        setMode('embed');
         setMuted(false);
       } else {
         setMode('poster');
@@ -410,7 +455,113 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
   }, [mode]);
 
-  const isTheaterMode = mode === 'stream' || (mode === 'trailer' && trailerFullPlayer);
+  const parsedMalId = useMemo(() => {
+    const num = Number(malIdOverride.trim());
+    return num > 0 ? Math.floor(num) : enriched.malId && Number(enriched.malId) > 0 ? Number(enriched.malId) : null;
+  }, [malIdOverride, enriched.malId]);
+
+  const canEmbedVidLink = useMemo(
+    () => hasVidLinkSupport(enriched) || Boolean(parsedMalId),
+    [enriched, parsedMalId]
+  );
+
+  const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
+
+  const savedStartAtSec = useMemo(() => {
+    try {
+      const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
+      const sec = Number(localStorage.getItem(progressKey) || 0);
+      return sec > 10 ? Math.floor(sec) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [enriched.id, activeEpisodeLabel]);
+
+  const vidlinkEmbedUrl = useMemo(() => {
+    return resolveVidLinkEmbedUrl({
+      item: enriched,
+      season: selectedSeasonNum,
+      episode: selectedEpNum,
+      subOrDub: animeAudioType,
+      malIdOverride: parsedMalId,
+      params: {
+        primaryColor: '00E5FF',
+        secondaryColor: '141821',
+        iconColor: '00E5FF',
+        icons: 'vid',
+        title: true,
+        poster: true,
+        autoplay: true,
+        nextbutton: true,
+        player: vidlinkPlayerType,
+        startAt: savedStartAtSec,
+        sub_file: externalSubUrl.trim() || undefined,
+        sub_label: externalSubLabel.trim() || undefined,
+      },
+    });
+  }, [
+    enriched,
+    selectedSeasonNum,
+    selectedEpNum,
+    animeAudioType,
+    parsedMalId,
+    vidlinkPlayerType,
+    savedStartAtSec,
+    externalSubUrl,
+    externalSubLabel,
+  ]);
+
+  // Record initial progress & listen for VidLink MEDIA_DATA postMessages when streaming via VidLink embed
+  useEffect(() => {
+    if (mode !== 'embed' || !vidlinkEmbedUrl) return;
+
+    const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
+    const existingSec = Number(localStorage.getItem(progressKey) || 0);
+    backendApi.saveWatchProgress({
+      movieId: enriched.id,
+      episodeId: activeEpisodeLabel || null,
+      title: enriched.title,
+      poster: enriched.backdrop || enriched.poster,
+      currentTime: existingSec > 10 ? existingSec : 120,
+      duration: 5400,
+    });
+
+    const onMessage = (event: MessageEvent) => {
+      if (!event.origin.includes('vidlink.pro')) return;
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+
+        if (data.type === 'PLAYER_EVENT' && data.data) {
+          const { currentTime, duration } = data.data;
+          if (typeof currentTime === 'number' && currentTime > 5) {
+            const now = Date.now();
+            if (now - lastProgressSentRef.current < 5000) return;
+            lastProgressSentRef.current = now;
+            localStorage.setItem(progressKey, String(Math.floor(currentTime)));
+            backendApi.saveWatchProgress({
+              movieId: enriched.id,
+              episodeId: activeEpisodeLabel || null,
+              title: enriched.title,
+              poster: enriched.backdrop || enriched.poster,
+              currentTime,
+              duration: typeof duration === 'number' && duration > 0 ? duration : 5400,
+            });
+          }
+        } else if (data.type === 'MEDIA_DATA' && data.data) {
+          localStorage.setItem('vidLinkProgress', JSON.stringify(data.data));
+        }
+      } catch {
+        // ignore malformed postMessage
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [mode, vidlinkEmbedUrl, enriched.id, enriched.title, enriched.backdrop, enriched.poster, activeEpisodeLabel]);
+
+  const isTheaterMode =
+    mode === 'stream' || mode === 'embed' || (mode === 'trailer' && trailerFullPlayer);
   const bannerPreviewActive =
     !isTheaterMode && !previewDismissed && !downloadModalOpen && heroInView && tabVisible;
 
@@ -466,6 +617,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     if (activeSources.length > 0) {
       setMuted(false);
       setMode('stream');
+    } else if (canEmbedVidLink) {
+      setMuted(false);
+      setMode('embed');
     } else if (activeVideoKey) {
       setPreviewDismissed(false);
       setMuted(false);
@@ -478,24 +632,20 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   const handleSelectEpisode = (ep: EpisodeItem) => {
     setSelectedEpNum(ep.episodeNumber);
+    const label = `S${String(ep.seasonNumber).padStart(2, '0')}E${String(
+      ep.episodeNumber
+    ).padStart(2, '0')} — ${ep.title}`;
+    setActiveEpisodeLabel(label);
+
     if (ep.sources && ep.sources.length > 0) {
       setActiveSources(ep.sources);
       setActiveSourceIdx(0);
-      setActiveEpisodeLabel(
-        `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(
-          2,
-          '0'
-        )} — ${ep.title}`
-      );
       setMuted(false);
       setMode('stream');
-    } else {
-      setActiveEpisodeLabel(
-        `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(
-          2,
-          '0'
-        )} — ${ep.title}`
-      );
+    } else if (canEmbedVidLink) {
+      setActiveSources([]);
+      setMuted(false);
+      setMode('embed');
     }
   };
 
@@ -534,7 +684,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const hasPlayableFullVideo = activeSources.length > 0;
+  const hasPlayableFullVideo = activeSources.length > 0 || canEmbedVidLink;
   const isSeries = enriched.type === 'series';
   const heroTitle =
     isSeries && seasons.length > 1
@@ -876,6 +1026,18 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       >
                         Retry Stream
                       </button>
+                      {canEmbedVidLink && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStreamError('');
+                            setMode('embed');
+                          }}
+                          className="min-h-[40px] px-4 rounded-full bg-[#10B981] text-[#041811] text-xs font-extrabold"
+                        >
+                          Switch to VidLink Cloud Server
+                        </button>
+                      )}
                       {activeVideoKey && (
                         <button
                           type="button"
@@ -902,6 +1064,56 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 >
                   {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 </button>
+              </>
+            ) : mode === 'embed' && vidlinkEmbedUrl ? (
+              <>
+                <iframe
+                  key={vidlinkEmbedUrl}
+                  src={vidlinkEmbedUrl}
+                  title={
+                    activeEpisodeLabel
+                      ? `${enriched.title} — ${activeEpisodeLabel}`
+                      : enriched.title
+                  }
+                  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  frameBorder={0}
+                  className="w-full h-full border-0 bg-black"
+                />
+
+                {activeEpisodeLabel && (
+                  <div className="pointer-events-none absolute top-3 left-3 z-20 px-3 py-1 rounded-full bg-[#0B0D12]/85 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] font-bold text-[#00E5FF]">
+                    Now Playing: {activeEpisodeLabel}
+                  </div>
+                )}
+
+                <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMuted(true);
+                      setMode('poster');
+                      setTrailerFullPlayer(false);
+                    }}
+                    className="h-9 px-3.5 rounded-full bg-black/70 hover:bg-black/90 border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    Banner View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMuted(true);
+                      setPreviewDismissed(true);
+                      setMode('poster');
+                      setTrailerFullPlayer(false);
+                    }}
+                    aria-label="Close player"
+                    className="w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 border border-white/15 text-white flex items-center justify-center transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </>
             ) : (
               activeVideoKey && (
@@ -948,6 +1160,176 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
               )
             )}
           </div>
+
+          {/* VidLink & Server Switcher Toolbar Below Active Theater Player */}
+          {canEmbedVidLink && (
+            <div className="px-4 sm:px-6 lg:px-8 py-3 bg-[#10141D] border-t border-white/[0.08] space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                {/* Server & Player Engine Selection */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#94A3B8] inline-flex items-center gap-1">
+                    <Server className="w-3.5 h-3.5 text-[#00E5FF]" />
+                    Server:
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVidlinkPlayerType('default');
+                      setMode('embed');
+                    }}
+                    className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                      mode === 'embed' && vidlinkPlayerType === 'default'
+                        ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                        : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                    }`}
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    VidLink Pro (Default)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVidlinkPlayerType('jw');
+                      setMode('embed');
+                    }}
+                    className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                      mode === 'embed' && vidlinkPlayerType === 'jw'
+                        ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                        : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                    }`}
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    VidLink (JWPlayer)
+                  </button>
+
+                  {activeSources.map((src, idx) => (
+                    <button
+                      key={src.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSourceIdx(idx);
+                        setMode('stream');
+                      }}
+                      className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                        mode === 'stream' && activeSourceIdx === idx
+                          ? 'bg-[#10B981]/15 border-[#10B981]/60 text-[#10B981]'
+                          : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                      }`}
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      {src.label || `Custom Mirror ${idx + 1}`} ({src.quality})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Anime Sub/Dub + MAL ID Switcher & External VTT Subtitles */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {isAnime && (
+                    <>
+                      <div className="inline-flex items-center rounded-lg bg-[#141821] border border-white/10 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('sub');
+                            setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'sub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          SUB
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('dub');
+                            setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'dub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          DUB
+                        </button>
+                      </div>
+
+                      <div className="inline-flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-[#94A3B8]">MAL ID:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={malIdOverride}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMalIdOverride(val);
+                            try {
+                              if (val.trim()) {
+                                localStorage.setItem(`cinepulse_mal_${enriched.id}`, val.trim());
+                              } else {
+                                localStorage.removeItem(`cinepulse_mal_${enriched.id}`);
+                              }
+                            } catch {
+                              // ignore storage errors
+                            }
+                          }}
+                          placeholder="TMDB Fallback"
+                          title="Enter MyAnimeList ID to use /anime/{MALid}/{ep}/{subOrDub}?fallback=true, or leave empty to use TMDB fallback"
+                          className="w-28 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSubConfig((v) => !v)}
+                    className={`min-h-[34px] px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                      showSubConfig || externalSubUrl.trim()
+                        ? 'bg-[#00E5FF]/15 border-[#00E5FF]/50 text-[#00E5FF]'
+                        : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                    }`}
+                  >
+                    <Subtitles className="w-3.5 h-3.5" />
+                    {externalSubUrl.trim() ? `Sub: ${externalSubLabel || 'VTT'}` : 'External .VTT'}
+                  </button>
+                </div>
+              </div>
+
+              {showSubConfig && (
+                <div className="pt-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <input
+                    type="url"
+                    value={externalSubUrl}
+                    onChange={(e) => setExternalSubUrl(e.target.value)}
+                    placeholder="Direct .vtt subtitle URL (e.g. https://example.com/subtitles.vtt)"
+                    className="flex-1 min-h-[36px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 focus:border-[#00E5FF] text-xs text-[#F8FAFC] outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={externalSubLabel}
+                    onChange={(e) => setExternalSubLabel(e.target.value)}
+                    placeholder="Subtitle label (e.g. English)"
+                    className="sm:w-40 min-h-[36px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 focus:border-[#00E5FF] text-xs text-[#F8FAFC] outline-none"
+                  />
+                  {externalSubUrl.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setExternalSubUrl('')}
+                      className="min-h-[36px] px-3 rounded-lg bg-[#1E2430] text-xs font-bold text-[#94A3B8] hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Clean Stacked Overview & Actions Below Player (Zero Controls Collision) */}
           <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-5 bg-[#0D1017] border-t border-white/[0.07]">
@@ -1023,21 +1405,85 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   )}
                 </div>
 
-                {/* Quality Indicator Strip like Screenshot */}
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {(activeSources.length > 0
-                    ? activeSources.map((s) => s.quality)
-                    : ['4K', '1080p', '720p', '480p']
-                  ).map((q, i) => (
-                    <span
-                      key={`${q}-${i}`}
-                      className="px-2.5 py-1 rounded bg-[#1B222C] border border-white/[0.08] font-bold text-[#CBD5E1]"
-                    >
-                      {q}
-                    </span>
-                  ))}
-                  {loadingSeason && (
-                    <span className="text-xs text-[#00E5FF] font-semibold">Loading episodes...</span>
+                {/* Quality Indicator Strip + Anime Sub/Dub Toggle */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(activeSources.length > 0
+                      ? activeSources.map((s) => s.quality)
+                      : ['4K', '1080p', '720p', '480p']
+                    ).map((q, i) => (
+                      <span
+                        key={`${q}-${i}`}
+                        className="px-2.5 py-1 rounded bg-[#1B222C] border border-white/[0.08] font-bold text-[#CBD5E1]"
+                      >
+                        {q}
+                      </span>
+                    ))}
+                    {canEmbedVidLink && (
+                      <span className="px-2.5 py-1 rounded bg-[#00E5FF]/15 border border-[#00E5FF]/40 font-extrabold text-[#00E5FF]">
+                        {parsedMalId
+                          ? `VidLink Anime (MAL #${parsedMalId} • ${animeAudioType.toUpperCase()})`
+                          : 'VidLink Cloud Stream Ready'}
+                      </span>
+                    )}
+                    {loadingSeason && (
+                      <span className="text-xs text-[#00E5FF] font-semibold">Loading episodes...</span>
+                    )}
+                  </div>
+
+                  {isAnime && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex items-center rounded-lg bg-[#141821] border border-white/10 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('sub');
+                            if (canEmbedVidLink) setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'sub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          SUB
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('dub');
+                            if (canEmbedVidLink) setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'dub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          DUB
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        value={malIdOverride}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMalIdOverride(val);
+                          try {
+                            if (val.trim()) {
+                              localStorage.setItem(`cinepulse_mal_${enriched.id}`, val.trim());
+                            } else {
+                              localStorage.removeItem(`cinepulse_mal_${enriched.id}`);
+                            }
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                        placeholder="MAL ID (optional)"
+                        className="w-32 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
+                      />
+                    </div>
                   )}
                 </div>
 
@@ -1046,7 +1492,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     <div className="flex flex-wrap gap-2">
                       {episodes.map((ep) => {
                         const isSelected = ep.episodeNumber === selectedEpNum;
-                        const epReady = Boolean(ep.sources && ep.sources.length > 0);
+                        const epReady =
+                          Boolean(ep.sources && ep.sources.length > 0) || canEmbedVidLink;
                         return (
                           <button
                             key={ep.id}
@@ -1057,7 +1504,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                               isSelected
                                 ? 'bg-[#10B981]/15 border-[#10B981]/60 text-[#10B981]'
                                 : epReady
-                                ? 'bg-[#141821] border-[#00E5FF]/35 text-[#F8FAFC]'
+                                ? 'bg-[#141821] border-[#00E5FF]/35 text-[#F8FAFC] hover:border-[#00E5FF]'
                                 : 'bg-[#141821] border-white/[0.08] text-[#94A3B8] hover:text-[#F8FAFC]'
                             }`}
                           >
@@ -1080,34 +1527,38 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           </p>
                         </div>
 
-                        {selectedEpisodeObj.sources?.length ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSelectEpisode(selectedEpisodeObj)}
-                            className="min-h-[38px] px-4 rounded-md bg-[#10B981] text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5"
-                          >
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                            Watch Episode
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={requesting}
-                            onClick={handleRequestTitle}
-                            className={`min-h-[38px] px-4 rounded-md text-xs font-extrabold inline-flex items-center gap-1.5 ${
-                              hasRequested
-                                ? 'bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981]'
-                                : 'bg-[#00E5FF] text-[#071018]'
-                            }`}
-                          >
-                            {hasRequested ? (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            ) : (
-                              <Send className="w-3.5 h-3.5" />
-                            )}
-                            {hasRequested ? 'Requested' : 'Request Episode Links'}
-                          </button>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(Boolean(selectedEpisodeObj.sources?.length) || canEmbedVidLink) && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectEpisode(selectedEpisodeObj)}
+                              className="min-h-[38px] px-4 rounded-md bg-[#10B981] hover:brightness-110 text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              Watch Episode
+                            </button>
+                          )}
+
+                          {!selectedEpisodeObj.sources?.length && (
+                            <button
+                              type="button"
+                              disabled={requesting}
+                              onClick={handleRequestTitle}
+                              className={`min-h-[38px] px-3.5 rounded-md text-xs font-bold inline-flex items-center gap-1.5 ${
+                                hasRequested
+                                  ? 'bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981]'
+                                  : 'bg-[#1E2430] hover:bg-[#273041] border border-white/10 text-[#CBD5E1]'
+                              }`}
+                            >
+                              {hasRequested ? (
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5" />
+                              )}
+                              {hasRequested ? 'Requested' : 'Request Direct Download'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1119,9 +1570,108 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
               </>
             ) : (
               <>
-                <h2 className="text-base font-extrabold text-[#F8FAFC]">Streams &amp; Quality</h2>
-                {activeSources.length > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-base font-extrabold text-[#F8FAFC]">Streams &amp; Quality</h2>
+                  {isAnime && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex items-center rounded-lg bg-[#141821] border border-white/10 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('sub');
+                            if (canEmbedVidLink) setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'sub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          SUB
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnimeAudioType('dub');
+                            if (canEmbedVidLink) setMode('embed');
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-extrabold uppercase transition-colors ${
+                            animeAudioType === 'dub'
+                              ? 'bg-[#00E5FF] text-[#071018]'
+                              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          DUB
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        value={malIdOverride}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMalIdOverride(val);
+                          try {
+                            if (val.trim()) {
+                              localStorage.setItem(`cinepulse_mal_${enriched.id}`, val.trim());
+                            } else {
+                              localStorage.removeItem(`cinepulse_mal_${enriched.id}`);
+                            }
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                        placeholder="MAL ID (optional)"
+                        className="w-32 h-8 px-2.5 rounded-lg bg-[#141821] border border-white/10 focus:border-[#00E5FF] text-xs font-bold text-[#F8FAFC] outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {(activeSources.length > 0 || canEmbedVidLink) && (
                   <div className="flex flex-wrap gap-2">
+                    {canEmbedVidLink && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVidlinkPlayerType('default');
+                            setMode('embed');
+                          }}
+                          className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                            mode === 'embed' && vidlinkPlayerType === 'default'
+                              ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                              : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
+                          }`}
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>
+                            {parsedMalId
+                              ? `VidLink Anime (${animeAudioType.toUpperCase()})`
+                              : 'VidLink Cloud Stream'}
+                          </span>
+                          <span className="text-[#94A3B8] font-normal">(1080p Auto)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVidlinkPlayerType('jw');
+                            setMode('embed');
+                          }}
+                          className={`min-h-[40px] px-4 rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                            mode === 'embed' && vidlinkPlayerType === 'jw'
+                              ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                              : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
+                          }`}
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>VidLink JWPlayer</span>
+                          <span className="text-[#94A3B8] font-normal">(1080p)</span>
+                        </button>
+                      </>
+                    )}
+
                     {activeSources.map((src, idx) => (
                       <button
                         key={src.id}
@@ -1142,12 +1692,26 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       </button>
                     ))}
                   </div>
-                ) : (
+                )}
+
+                {activeSources.length === 0 && (
                   <div className="rounded-xl bg-[#141821] border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="text-xs text-[#94A3B8] leading-relaxed">
-                      <strong className="text-[#F8FAFC]">Stream link not added yet.</strong> Request
-                      this movie so our team knows you want to watch it and prioritizes adding the
-                      stream &amp; download mirrors!
+                      {canEmbedVidLink ? (
+                        <>
+                          <strong className="text-[#F8FAFC]">
+                            Instant streaming is active via VidLink Cloud.
+                          </strong>{' '}
+                          Want a direct offline MP4 download mirror added for this title? Submit a
+                          request below!
+                        </>
+                      ) : (
+                        <>
+                          <strong className="text-[#F8FAFC]">Stream link not added yet.</strong>{' '}
+                          Request this movie so our team knows you want to watch it and prioritizes
+                          adding the stream &amp; download mirrors!
+                        </>
+                      )}
                       {requestCount > 0 && (
                         <span className="ml-2 px-2 py-0.5 rounded bg-[#FFB800]/15 text-[#FFB800] font-bold tabular-nums">
                           {requestCount} request{requestCount > 1 ? 's' : ''}
@@ -1169,7 +1733,11 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       ) : (
                         <Send className="w-3.5 h-3.5" />
                       )}
-                      {hasRequested ? 'Requested' : 'Request This Movie'}
+                      {hasRequested
+                        ? 'Requested'
+                        : canEmbedVidLink
+                        ? 'Request Direct Download'
+                        : 'Request This Movie'}
                     </button>
                   </div>
                 )}

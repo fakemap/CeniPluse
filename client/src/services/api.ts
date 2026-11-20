@@ -581,6 +581,20 @@ export const backendApi = {
     return data as CmsTitleItem;
   },
 
+  async cmsUpdateTitleMetadata(
+    id: string,
+    payload: { malId?: number | null; tmdbId?: number | null }
+  ) {
+    const res = await fetch(`/api/cms/admin/titles/${encodeURIComponent(id)}/metadata`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update metadata');
+    return data as CmsTitleItem;
+  },
+
   async cmsCheckLinks(id: string) {
     const res = await fetch(`/api/cms/admin/titles/${encodeURIComponent(id)}/check-links`, {
       method: 'POST',
