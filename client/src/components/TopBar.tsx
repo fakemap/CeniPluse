@@ -167,7 +167,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 h-14 md:h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 transition-all duration-300 ${
+      className={`fixed top-0 left-0 right-0 z-50 h-12 md:h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 transition-all duration-300 ${
         isScrolled
           ? 'bg-[#0B0D12]/92 backdrop-blur-2xl border-b border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.65)]'
           : transparentOnTop
@@ -191,16 +191,16 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           onClick={onGoHome}
-          className="min-h-[44px] flex items-center gap-2 shrink-0 focus:outline-none px-1"
+          className="flex items-center gap-1.5 md:gap-2 shrink-0 focus:outline-none py-1"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00E5FF] via-[#0EA5E9] to-[#10B981] p-[1.5px]">
-            <div className="w-full h-full rounded-[7px] bg-[#0B0D12] flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#00E5FF]" fill="currentColor">
+          <div className="w-7 h-7 md:w-8 md:h-8 rounded-[7px] md:rounded-lg bg-gradient-to-br from-[#00E5FF] via-[#0EA5E9] to-[#10B981] p-[1.5px]">
+            <div className="w-full h-full rounded-[5.5px] md:rounded-[7px] bg-[#0B0D12] flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#00E5FF]" fill="currentColor">
                 <path d="M7.5 4.8a1.4 1.4 0 0 1 2.13-1.2l10.2 6.2a1.4 1.4 0 0 1 0 2.4l-10.2 6.2a1.4 1.4 0 0 1-2.13-1.2V4.8z" />
               </svg>
             </div>
           </div>
-          <span className="text-[1.1rem] md:text-[1.18rem] font-extrabold tracking-tight text-[#F8FAFC]">
+          <span className="text-[14.5px] md:text-[1.18rem] font-extrabold tracking-tight text-[#F8FAFC]">
             Cine<span className="text-[#00E5FF]">Pulse</span>
           </span>
         </button>
@@ -300,15 +300,15 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Right Controls: Mobile = Go Premium Crown + Language/Region Toggle + Profile Icon (44x44 targets) */}
+      {/* Right Controls: Mobile = Go Premium Crown + Language/Region Toggle + Profile Icon (Refined Compact Size) */}
       <div className="flex md:hidden items-center gap-1.5 shrink-0">
         <button
           type="button"
           onClick={() => onOpenModal('pro')}
           aria-label="Go Premium"
-          className="min-w-[44px] min-h-[44px] rounded-full bg-gradient-to-r from-[#FFF1BC] via-[#FCE18E] to-[#F5CD67] active:scale-[0.96] text-[#2B1907] flex items-center justify-center shadow-sm"
+          className="w-8 h-8 rounded-full bg-gradient-to-r from-[#FFF1BC] via-[#FCE18E] to-[#F5CD67] active:scale-[0.94] text-[#2B1907] flex items-center justify-center shadow-sm shrink-0"
         >
-          <Crown className="w-4 h-4 fill-[#2B1907]" />
+          <Crown className="w-3.5 h-3.5 fill-[#2B1907]" />
         </button>
 
         <div ref={langContainerRef} className="relative">
@@ -316,14 +316,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             type="button"
             onClick={() => setMobileLangOpen((o) => !o)}
             aria-label="Change language or region"
-            className="min-w-[44px] min-h-[44px] px-2.5 rounded-full bg-[#141821] active:bg-[#1E2430] border border-white/[0.08] flex items-center justify-center gap-1 text-xs font-bold text-[#F8FAFC]"
+            className="h-8 px-2 rounded-full bg-[#141821] active:bg-[#1E2430] border border-white/[0.08] flex items-center justify-center gap-1 text-[11px] font-bold text-[#F8FAFC] shrink-0"
           >
-            <Globe className="w-4 h-4 text-[#00E5FF]" />
+            <Globe className="w-3.5 h-3.5 text-[#00E5FF]" />
             <span>{uiLanguage}</span>
           </button>
 
           {mobileLangOpen && (
-            <div className="absolute right-0 top-[48px] w-40 rounded-2xl bg-[#141821] border border-white/[0.12] shadow-2xl py-1.5 z-50 animate-modal">
+            <div className="absolute right-0 top-[38px] w-40 rounded-2xl bg-[#141821] border border-white/[0.12] shadow-2xl py-1.5 z-50 animate-modal">
               {UI_LANGUAGES.map((lang) => (
                 <button
                   key={lang.code}
@@ -332,7 +332,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     onChangeLanguage(lang.code);
                     setMobileLangOpen(false);
                   }}
-                  className={`w-full min-h-[44px] px-3.5 text-left text-xs font-semibold flex items-center justify-between active:bg-[#1E2430] ${
+                  className={`w-full min-h-[40px] px-3.5 text-left text-xs font-semibold flex items-center justify-between active:bg-[#1E2430] ${
                     lang.code === uiLanguage ? 'text-[#00E5FF]' : 'text-[#F8FAFC]'
                   }`}
                 >
@@ -348,9 +348,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={() => onOpenModal('signin')}
           aria-label="Profile and Log in"
-          className="min-w-[44px] min-h-[44px] rounded-full bg-[#141821] active:bg-[#1E2430] border border-white/[0.08] flex items-center justify-center text-[#F8FAFC]"
+          className="w-8 h-8 rounded-full bg-[#141821] active:bg-[#1E2430] border border-white/[0.08] flex items-center justify-center text-[#F8FAFC] shrink-0"
         >
-          <User className="w-4 h-4 text-[#00E5FF]" />
+          <User className="w-3.5 h-3.5 text-[#00E5FF]" />
         </button>
       </div>
 

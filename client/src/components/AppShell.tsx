@@ -87,7 +87,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 
       {/* Full-width edge-to-edge Main Content Area — 0px desktop gutters */}
       <main
-        className={`pt-14 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-hidden ${
+        className={`pt-12 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-hidden ${
           hasFullBleedHero ? 'md:pt-0' : 'md:pt-16'
         }`}
       >
