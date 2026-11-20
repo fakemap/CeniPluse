@@ -42,7 +42,8 @@ import {
 } from '../utils/vidlink';
 import { DownloadOptionsModal } from './DownloadOptionsModal';
 import { SnippetPlayer } from './SnippetPlayer';
-import { trackEvent } from '../services/analytics';
+import { SponsoredBanner } from './SponsoredBanner';
+import { trackEvent, type MonetizationConfig } from '../services/analytics';
 
 interface MediaDetailViewProps {
   item: MediaItem;
@@ -50,6 +51,10 @@ interface MediaDetailViewProps {
   catalog: MediaItem[];
   inWatchlist: boolean;
   userEmail: string | null;
+  hasActiveSubscription?: boolean;
+  monetizationConfig?: MonetizationConfig | null;
+  premiumPlan?: string | null;
+  onRequireSubscription?: (reason: string) => void;
   onBack: () => void;
   onToggleWatchlist: (id: string) => void;
   onSelectMedia: (item: MediaItem) => void;
@@ -72,6 +77,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   catalog,
   inWatchlist,
   userEmail,
+  hasActiveSubscription = false,
+  monetizationConfig = null,
+  premiumPlan = null,
+  onRequireSubscription,
   onBack,
   onToggleWatchlist,
   onSelectMedia,
@@ -766,7 +775,19 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
   };
 
+  const isPaywallEnforced =
+    (monetizationConfig?.accessMode || 'soft_paywall') !== 'freemium' && !hasActiveSubscription;
+
+  const ensureSubscribedFor = (actionLabel: string): boolean => {
+    if (!isPaywallEnforced) return true;
+    onRequireSubscription?.(
+      `Subscribe to CinePulse Premium (from GHS 25/mo via MoMo or Card) to ${actionLabel}.`
+    );
+    return false;
+  };
+
   const handleWatchPrimary = () => {
+    if (!ensureSubscribedFor(`stream "${enriched.title}" ad-free in HD`)) return;
     if (activeSources.length > 0 || resolvingStreams) {
       userPinnedEmbedRef.current = false;
       setMuted(false);
@@ -786,6 +807,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   const handleSelectEpisode = (ep: EpisodeItem) => {
     setSelectedEpNum(ep.episodeNumber);
+    if (!ensureSubscribedFor(`watch ${enriched.title} S${ep.seasonNumber}E${ep.episodeNumber}`)) {
+      return;
+    }
     const label = `S${String(ep.seasonNumber).padStart(2, '0')}E${String(
       ep.episodeNumber
     ).padStart(2, '0')} — ${ep.title}`;
@@ -1017,7 +1041,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setDownloadModalOpen(true)}
+                  onClick={() => {
+                    if (!ensureSubscribedFor(`download "${enriched.title}" in HD (.MP4 + .SRT)`)) return;
+                    setDownloadModalOpen(true);
+                  }}
                   className="min-h-[44px] sm:min-h-[42px] px-2.5 sm:px-4 rounded-xl sm:rounded-md bg-[#1B222C] hover:bg-[#242D3B] border border-white/15 text-[11.5px] sm:text-xs font-bold text-[#F8FAFC] inline-flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
@@ -1583,6 +1610,19 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         </section>
       )}
 
+      {/* Double Ad Slot 2 (Visible only for non-subscribers when Ads are enabled) */}
+      <SponsoredBanner
+        config={monetizationConfig}
+        premiumPlan={hasActiveSubscription ? premiumPlan || 'active' : null}
+        slot="secondary"
+        placement="media_detail_top"
+        onOpenPremium={() =>
+          onRequireSubscription?.(
+            'Go 100% Ad-Free and unlock unlimited HD streaming & downloads with CinePulse Premium.'
+          )
+        }
+      />
+
       {/* Two-Column Body: Left (Episodes/Quality + Top Cast + User Reviews) | Right (More like this) */}
       <div className="px-4 md:px-0 grid grid-cols-1 xl:grid-cols-[1fr_290px] gap-7 items-start">
         {/* LEFT MAIN COLUMN */}
@@ -1900,6 +1940,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         key={src.id}
                         type="button"
                         onClick={() => {
+                          if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
                           userPinnedEmbedRef.current = false;
                           setActiveSourceIdx(idx);
                           setMode('stream');
@@ -1924,6 +1965,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         <button
                           type="button"
                           onClick={() => {
+                            if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
                             userPinnedEmbedRef.current = true;
                             setVidlinkPlayerType('default');
                             setMode('embed');

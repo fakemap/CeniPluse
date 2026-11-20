@@ -23,20 +23,28 @@ const ALLOWED_EVENTS = new Set([
 ]);
 
 const PLAN_PRICING_GHS = {
-  monthly: { name: 'Monthly', amount: 25, mrrFactor: 1 },
-  quarterly: { name: 'Quarterly', amount: 65, mrrFactor: 1 / 3 },
-  yearly: { name: 'Yearly', amount: 210, mrrFactor: 1 / 12 },
+  monthly: { name: 'Monthly', amount: 25, days: 30, mrrFactor: 1 },
+  quarterly: { name: 'Quarterly', amount: 65, days: 90, mrrFactor: 1 / 3 },
+  yearly: { name: 'Yearly', amount: 210, days: 365, mrrFactor: 1 / 12 },
 };
 
 const DEFAULT_MONETIZATION_CONFIG = {
-  adsEnabled: false,
+  accessMode: 'soft_paywall', // 'soft_paywall' | 'freemium' | 'strict_gate'
+  adsEnabled: true,
   adFreeForPremium: true,
   bannerEnabled: true,
-  adNetworkName: 'Sponsored / Adsterra',
-  bannerTitle: 'Stream Faster & Go 100% Ad-Free with CinePulse Premium',
-  bannerSubtitle: 'Unlock 4K UHD streams, instant downloads, and multi-device sync from GHS 25/mo.',
-  bannerCtaText: 'Go Premium',
+  adNetworkName: 'Sponsored',
+  bannerTitle: 'Unlock Unlimited HD Movies, Series & Fast MP4 Downloads',
+  bannerSubtitle: 'Subscribe with MTN MoMo, Telecel Cash, or Card from GHS 25/mo — 100% Ad-Free.',
+  bannerCtaText: 'Subscribe Now',
   bannerLinkUrl: '',
+  // Double-Ad Slot 2 (Media Detail / Player Banner)
+  secondAdEnabled: true,
+  secondAdNetworkName: 'Partner Offer',
+  secondAdTitle: 'Watch Without Limits — Zero Ads, Instant HD Downloads',
+  secondAdSubtitle: 'Upgrade to CinePulse Premium for instant access to every movie, series & subtitle.',
+  secondAdCtaText: 'Go Premium',
+  secondAdLinkUrl: '',
   ecpmGhs: 18.0,
   paymentGateway: 'paystack',
   paystackPublicKey: '',
@@ -48,7 +56,13 @@ const DEFAULT_MONETIZATION_CONFIG = {
 // Local fallback ring buffers when Supabase is offline or unavailable
 const localEventsFallback = [];
 const localRevenueFallback = [];
+const localSubscriptionsFallback = new Map();
 const MAX_LOCAL_EVENTS = 2500;
+
+function computeExpiryIso(planId) {
+  const days = PLAN_PRICING_GHS[planId]?.days || 30;
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
 
 function getMonetizationConfig() {
   const saved = store.data?.monetizationConfig || {};
@@ -160,21 +174,194 @@ router.post('/subscription', async (req, res) => {
 });
 
 // ============================================================================
+// 2B. PAYSTACK TRANSACTION VERIFICATION: POST /api/analytics/paystack/verify
+// ============================================================================
+router.post('/paystack/verify', async (req, res) => {
+  const b = req.body || {};
+  const reference = sanitizeString(b.reference || '', 120);
+  const planId = sanitizeString(b.planId || 'monthly', 30).toLowerCase();
+  const planInfo = PLAN_PRICING_GHS[planId] || PLAN_PRICING_GHS.monthly;
+  const userEmail = sanitizeString(b.userEmail || '', 120).toLowerCase();
+
+  if (!reference || !userEmail) {
+    return res.status(400).json({ error: 'Payment reference and account email are required.' });
+  }
+
+  const secretKey = String(process.env.PAYSTACK_SECRET_KEY || '').trim();
+  let verifiedAmountGhs = planInfo.amount;
+  let paymentChannel = sanitizeString(b.paymentMethod || 'momo', 30);
+
+  if (secretKey) {
+    try {
+      const psRes = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            Accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+      const psData = await psRes.json();
+      if (!psRes.ok || !psData?.status || psData?.data?.status !== 'success') {
+        return res.status(402).json({
+          error: psData?.message || 'Paystack could not confirm this payment yet.',
+        });
+      }
+      const paidGhs = Number(psData.data.amount || 0) / 100;
+      if (paidGhs < planInfo.amount * 0.95) {
+        return res.status(402).json({ error: 'Paid amount does not match selected plan.' });
+      }
+      verifiedAmountGhs = paidGhs;
+      paymentChannel = psData.data.channel === 'mobile_money' ? 'momo' : psData.data.channel || 'card';
+    } catch (err) {
+      return res.status(502).json({ error: `Paystack verification error: ${err.message}` });
+    }
+  } else if (!b.previewFallback) {
+    return res.status(503).json({
+      error: 'Paystack live keys are not configured yet on the server. Add PAYSTACK_SECRET_KEY in Vercel/Bot-Hosting env vars.',
+    });
+  }
+
+  const expiresAt = computeExpiryIso(planId);
+  const subRow = {
+    user_email: userEmail,
+    plan_id: planId,
+    plan_name: planInfo.name,
+    status: 'active',
+    payment_provider: secretKey ? 'paystack' : 'paystack_preview',
+    reference,
+    amount: verifiedAmountGhs,
+    currency: 'GHS',
+    starts_at: new Date().toISOString(),
+    expires_at: expiresAt,
+  };
+
+  localSubscriptionsFallback.set(userEmail, subRow);
+
+  const txRow = {
+    source: 'subscription',
+    plan_id: planId,
+    plan_name: planInfo.name,
+    payment_method: paymentChannel,
+    currency: 'GHS',
+    amount: verifiedAmountGhs,
+    status: 'completed',
+    user_email: userEmail,
+    reference,
+    notes: `Paystack ${planInfo.name} Premium`,
+  };
+  localRevenueFallback.unshift({ ...txRow, id: Date.now(), created_at: new Date().toISOString() });
+
+  if (supabaseClient.isEnabled()) {
+    await Promise.allSettled([
+      supabaseClient.insertRows('user_subscriptions', subRow),
+      supabaseClient.insertRows('revenue_transactions', txRow),
+    ]);
+  }
+
+  return res.json({
+    ok: true,
+    active: true,
+    planId,
+    planName: planInfo.name,
+    expiresAt,
+    reference,
+  });
+});
+
+// ============================================================================
+// 2C. SERVER-VERIFIED SUBSCRIPTION STATUS: GET /api/analytics/subscription-status
+// ============================================================================
+router.get('/subscription-status', async (req, res) => {
+  const authHeader = String(req.headers.authorization || '');
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!bearer) {
+    return res.json({ active: false, isAdmin: false });
+  }
+
+  const user = await supabaseClient.verifySupabaseUser(bearer);
+  if (!user || !user.email) {
+    return res.json({ active: false, isAdmin: false });
+  }
+
+  // Admins always have full unrestricted access
+  if (supabaseClient.isSupabaseAdminUser(user)) {
+    return res.json({
+      active: true,
+      isAdmin: true,
+      planId: 'yearly',
+      planName: 'Admin Unlimited',
+      expiresAt: null,
+    });
+  }
+
+  const email = user.email.toLowerCase();
+  const nowIso = new Date().toISOString();
+
+  if (supabaseClient.isEnabled()) {
+    try {
+      const rows = await supabaseClient.queryRows(
+        'user_subscriptions',
+        `select=*&user_email=eq.${encodeURIComponent(email)}&status=eq.active&expires_at=gt.${encodeURIComponent(nowIso)}&order=expires_at.desc&limit=1`
+      );
+      if (rows.length > 0) {
+        return res.json({
+          active: true,
+          isAdmin: false,
+          planId: rows[0].plan_id,
+          planName: rows[0].plan_name,
+          expiresAt: rows[0].expires_at,
+        });
+      }
+    } catch {
+      // fall through to local cache
+    }
+  }
+
+  const localSub = localSubscriptionsFallback.get(email);
+  if (localSub && new Date(localSub.expires_at).getTime() > Date.now()) {
+    return res.json({
+      active: true,
+      isAdmin: false,
+      planId: localSub.plan_id,
+      planName: localSub.plan_name,
+      expiresAt: localSub.expires_at,
+    });
+  }
+
+  return res.json({ active: false, isAdmin: false });
+});
+
+// ============================================================================
 // 3. PUBLIC MONETIZATION CONFIG: GET /api/analytics/monetization-config
 // ============================================================================
 router.get('/monetization-config', (req, res) => {
   const cfg = getMonetizationConfig();
+  const publicPaystackKey = String(
+    cfg.paystackPublicKey || process.env.PAYSTACK_PUBLIC_KEY || ''
+  ).trim();
   return res.json({
+    accessMode: cfg.accessMode || 'soft_paywall',
     adsEnabled: Boolean(cfg.adsEnabled),
     adFreeForPremium: cfg.adFreeForPremium !== false,
     bannerEnabled: cfg.bannerEnabled !== false,
     adNetworkName: cfg.adNetworkName || 'Sponsored',
     bannerTitle: cfg.bannerTitle || DEFAULT_MONETIZATION_CONFIG.bannerTitle,
     bannerSubtitle: cfg.bannerSubtitle || DEFAULT_MONETIZATION_CONFIG.bannerSubtitle,
-    bannerCtaText: cfg.bannerCtaText || 'Go Premium',
+    bannerCtaText: cfg.bannerCtaText || 'Subscribe Now',
     bannerLinkUrl: cfg.bannerLinkUrl || '',
+    secondAdEnabled: cfg.secondAdEnabled !== false,
+    secondAdNetworkName: cfg.secondAdNetworkName || 'Partner Offer',
+    secondAdTitle: cfg.secondAdTitle || DEFAULT_MONETIZATION_CONFIG.secondAdTitle,
+    secondAdSubtitle: cfg.secondAdSubtitle || DEFAULT_MONETIZATION_CONFIG.secondAdSubtitle,
+    secondAdCtaText: cfg.secondAdCtaText || 'Go Premium',
+    secondAdLinkUrl: cfg.secondAdLinkUrl || '',
     paymentGateway: cfg.paymentGateway || 'paystack',
-    hasPaystackKey: Boolean(cfg.paystackPublicKey),
+    paystackPublicKey: publicPaystackKey,
+    hasPaystackKey: Boolean(publicPaystackKey),
+    hasPaystackSecret: Boolean(process.env.PAYSTACK_SECRET_KEY),
   });
 });
 
@@ -604,6 +791,9 @@ router.get('/admin/dashboard', requireAdminAuth, async (req, res) => {
 router.put('/admin/monetization-config', requireAdminAuth, (req, res) => {
   const b = req.body || {};
   const patch = {};
+  if (['soft_paywall', 'freemium', 'strict_gate'].includes(b.accessMode)) {
+    patch.accessMode = b.accessMode;
+  }
   if (typeof b.adsEnabled === 'boolean') patch.adsEnabled = b.adsEnabled;
   if (typeof b.adFreeForPremium === 'boolean') patch.adFreeForPremium = b.adFreeForPremium;
   if (typeof b.bannerEnabled === 'boolean') patch.bannerEnabled = b.bannerEnabled;
@@ -612,6 +802,20 @@ router.put('/admin/monetization-config', requireAdminAuth, (req, res) => {
   if (typeof b.bannerSubtitle === 'string') patch.bannerSubtitle = sanitizeString(b.bannerSubtitle, 200);
   if (typeof b.bannerCtaText === 'string') patch.bannerCtaText = sanitizeString(b.bannerCtaText, 40);
   if (typeof b.bannerLinkUrl === 'string') patch.bannerLinkUrl = sanitizeString(b.bannerLinkUrl, 300);
+  if (typeof b.secondAdEnabled === 'boolean') patch.secondAdEnabled = b.secondAdEnabled;
+  if (typeof b.secondAdNetworkName === 'string') {
+    patch.secondAdNetworkName = sanitizeString(b.secondAdNetworkName, 60);
+  }
+  if (typeof b.secondAdTitle === 'string') patch.secondAdTitle = sanitizeString(b.secondAdTitle, 120);
+  if (typeof b.secondAdSubtitle === 'string') {
+    patch.secondAdSubtitle = sanitizeString(b.secondAdSubtitle, 200);
+  }
+  if (typeof b.secondAdCtaText === 'string') {
+    patch.secondAdCtaText = sanitizeString(b.secondAdCtaText, 40);
+  }
+  if (typeof b.secondAdLinkUrl === 'string') {
+    patch.secondAdLinkUrl = sanitizeString(b.secondAdLinkUrl, 300);
+  }
   if (b.ecpmGhs !== undefined && !Number.isNaN(Number(b.ecpmGhs))) {
     patch.ecpmGhs = Math.max(0, Number(b.ecpmGhs));
   }
@@ -624,6 +828,41 @@ router.put('/admin/monetization-config', requireAdminAuth, (req, res) => {
 
   const updated = saveMonetizationConfig(patch);
   return res.json({ ok: true, monetizationConfig: updated });
+});
+
+// ============================================================================
+// 5B. ADMIN GRANT SUBSCRIPTION TO ANY EMAIL: POST /api/analytics/admin/grant-subscription
+// ============================================================================
+router.post('/admin/grant-subscription', requireAdminAuth, async (req, res) => {
+  const b = req.body || {};
+  const userEmail = sanitizeString(b.userEmail || '', 120).toLowerCase();
+  const planId = sanitizeString(b.planId || 'monthly', 30).toLowerCase();
+  const planInfo = PLAN_PRICING_GHS[planId] || PLAN_PRICING_GHS.monthly;
+  if (!userEmail || !userEmail.includes('@')) {
+    return res.status(400).json({ error: 'Valid user email is required.' });
+  }
+
+  const reference = `ADMIN-${Date.now().toString(36).toUpperCase()}`;
+  const expiresAt = computeExpiryIso(planId);
+  const subRow = {
+    user_email: userEmail,
+    plan_id: planId,
+    plan_name: planInfo.name,
+    status: 'active',
+    payment_provider: 'admin_grant',
+    reference,
+    amount: Number(b.amount) >= 0 ? Number(b.amount) : planInfo.amount,
+    currency: 'GHS',
+    starts_at: new Date().toISOString(),
+    expires_at: expiresAt,
+  };
+  localSubscriptionsFallback.set(userEmail, subRow);
+
+  if (supabaseClient.isEnabled()) {
+    await supabaseClient.insertRows('user_subscriptions', subRow).catch(() => {});
+  }
+
+  return res.status(201).json({ ok: true, subscription: subRow });
 });
 
 // ============================================================================

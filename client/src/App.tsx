@@ -40,6 +40,7 @@ import { SponsoredBanner } from './components/SponsoredBanner';
 import { MediaDetailView } from './components/MediaDetailView';
 import {
   fetchPublicMonetizationConfig,
+  fetchSubscriptionStatus,
   trackEvent,
   type MonetizationConfig,
 } from './services/analytics';
@@ -298,7 +299,37 @@ export const App: React.FC = () => {
     });
   };
 
+  const [monetizationConfig, setMonetizationConfig] = useState<MonetizationConfig | null>(null);
+  const [serverSubActive, setServerSubActive] = useState<boolean>(false);
+  const [paywallReason, setPaywallReason] = useState<string | null>(null);
+
+  const hasActiveSubscription = Boolean(
+    userProfile?.role === 'admin' || serverSubActive || premiumPlan
+  );
+
+  const openPaywallModal = (reason: string) => {
+    setPaywallReason(reason);
+    setActiveModal('pro');
+  };
+
+  useEffect(() => {
+    fetchSubscriptionStatus().then((st) => {
+      setServerSubActive(Boolean(st.active));
+      if (st.active && st.planId) {
+        setPremiumPlan(st.planId);
+      }
+    });
+  }, [userEmail]);
+
   const handlePlayItem = (item: MediaItem) => {
+    const mode = monetizationConfig?.accessMode || 'soft_paywall';
+    if (mode !== 'freemium' && !hasActiveSubscription) {
+      setSelectedMedia({ item, autoPlay: false });
+      openPaywallModal(
+        `Subscribe to CinePulse Premium (from GHS 25/mo via MoMo or Card) to stream "${item.title}" ad-free in HD.`
+      );
+      return;
+    }
     if (item.sources.length > 0 || hasVidLinkSupport(item)) {
       recordPlayStart(item);
     }
@@ -622,8 +653,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Monetization / Ad Config fetched once for tasteful SponsoredBanner rendering
-  const [monetizationConfig, setMonetizationConfig] = useState<MonetizationConfig | null>(null);
+  // Monetization / Ad Config fetched once for Soft Paywall & Double Ad Banners
   useEffect(() => {
     fetchPublicMonetizationConfig().then((cfg) => {
       if (cfg) setMonetizationConfig(cfg);
@@ -1498,12 +1528,48 @@ export const App: React.FC = () => {
         onSearchChange={setSearchQuery}
         onSelectMedia={(item) => setSelectedMedia({ item, autoPlay: false })}
         watchlistCount={watchlistItems.length}
-        onOpenModal={(m) => setActiveModal(m)}
+        onOpenModal={(m) => {
+          if (m !== 'pro') setPaywallReason(null);
+          setActiveModal(m);
+        }}
         userEmail={userEmail}
-        premiumPlan={premiumPlan}
+        premiumPlan={hasActiveSubscription ? premiumPlan || 'active' : null}
         detailOpen={Boolean(selectedMedia)}
       >
-        {selectedMedia ? (
+        {monetizationConfig?.accessMode === 'strict_gate' &&
+        !hasActiveSubscription &&
+        activeRoute !== 'admin' ? (
+          <div className="min-h-[75vh] px-4 flex items-center justify-center">
+            <div className="w-full max-w-md rounded-2xl bg-[#141821] border border-[#FCE18E]/30 p-6 sm:p-8 text-center space-y-4 shadow-2xl">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-br from-[#FFF1BC] to-[#F5CD67] text-[#2B1907] flex items-center justify-center font-black text-lg">
+                VIP
+              </div>
+              <h1 className="text-2xl font-black text-[#F8FAFC] tracking-tight">
+                CinePulse Members-Only Access
+              </h1>
+              <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
+                Subscribe from <strong className="text-[#FCE18E]">GHS 25/month</strong> via MTN MoMo,
+                Telecel Cash, or Card to unlock unlimited ad-free HD movies, series, and fast downloads.
+              </p>
+              <div className="flex flex-col gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => openPaywallModal('Choose a plan below to unlock full access to CinePulse.')}
+                  className="w-full min-h-[46px] rounded-xl bg-gradient-to-r from-[#FFF1BC] via-[#FCE18E] to-[#F5CD67] text-[#2B1907] text-sm font-extrabold"
+                >
+                  Subscribe Now (MoMo / Card)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('signin')}
+                  className="w-full min-h-[44px] rounded-xl bg-[#0B0D12] border border-white/15 text-[#F8FAFC] text-xs font-bold"
+                >
+                  Already a Member? Sign In
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : selectedMedia ? (
           <ErrorBoundary fallbackTitle="Media Detail Page encountered an error">
             <Suspense fallback={<HeroSkeleton />}>
               <MediaDetailView
@@ -1512,6 +1578,10 @@ export const App: React.FC = () => {
                 catalog={catalog}
                 inWatchlist={watchlistIds.has(selectedMedia.item.id)}
                 userEmail={userEmail}
+                hasActiveSubscription={hasActiveSubscription}
+                monetizationConfig={monetizationConfig}
+                premiumPlan={premiumPlan}
+                onRequireSubscription={openPaywallModal}
                 onBack={handleDetailBack}
                 onToggleWatchlist={handleToggleWatchlist}
                 onSelectMedia={(rec) => setSelectedMedia({ item: rec, autoPlay: false })}
@@ -1527,13 +1597,20 @@ export const App: React.FC = () => {
 
       <ActionModals
         modal={activeModal}
-        onClose={() => setActiveModal(null)}
+        onClose={() => {
+          setActiveModal(null);
+          setPaywallReason(null);
+        }}
         userEmail={userEmail}
         userProfile={userProfile}
         premiumPlan={premiumPlan}
+        paystackPublicKey={monetizationConfig?.paystackPublicKey || ''}
+        paywallReason={paywallReason}
         onSelectPlan={(planId) => {
           localStorage.setItem('cinepulse_premium_plan', planId);
           setPremiumPlan(planId);
+          setServerSubActive(true);
+          setPaywallReason(null);
         }}
         onSwitchModal={(next) => setActiveModal(next)}
         onOpenAdmin={() => handleNavigate('admin')}
@@ -1541,6 +1618,7 @@ export const App: React.FC = () => {
           await signOutSupabase().catch(() => {});
           setUserProfile(null);
           setUserEmail(null);
+          setServerSubActive(false);
         }}
       />
     </>

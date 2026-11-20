@@ -35,6 +35,8 @@ interface ActionModalsProps {
   userEmail: string | null;
   userProfile?: AuthUserProfile | null;
   premiumPlan: string | null;
+  paystackPublicKey?: string;
+  paywallReason?: string | null;
   onSelectPlan: (planId: PremiumPlanId) => void;
   onSwitchModal: (next: 'pro' | 'app' | 'signin') => void;
   onSignOut: () => Promise<void> | void;
@@ -68,6 +70,8 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
   userEmail,
   userProfile = null,
   premiumPlan,
+  paystackPublicKey = '',
+  paywallReason = null,
   onSelectPlan,
   onSwitchModal,
   onSignOut,
@@ -102,6 +106,8 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
         onClose={onClose}
         userEmail={userEmail}
         activePlan={premiumPlan}
+        paystackPublicKey={paystackPublicKey}
+        paywallReason={paywallReason}
         onActivatePlan={onSelectPlan}
         onOpenSignIn={() => onSwitchModal('signin')}
       />

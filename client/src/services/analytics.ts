@@ -24,7 +24,10 @@ export interface AnalyticsEventPayload {
   metadata?: Record<string, unknown>;
 }
 
+export type AccessMode = 'soft_paywall' | 'freemium' | 'strict_gate';
+
 export interface MonetizationConfig {
+  accessMode: AccessMode;
   adsEnabled: boolean;
   adFreeForPremium: boolean;
   bannerEnabled: boolean;
@@ -33,10 +36,25 @@ export interface MonetizationConfig {
   bannerSubtitle: string;
   bannerCtaText: string;
   bannerLinkUrl: string;
+  secondAdEnabled?: boolean;
+  secondAdNetworkName?: string;
+  secondAdTitle?: string;
+  secondAdSubtitle?: string;
+  secondAdCtaText?: string;
+  secondAdLinkUrl?: string;
   ecpmGhs?: number;
   paymentGateway?: string;
   paystackPublicKey?: string;
   hasPaystackKey?: boolean;
+  hasPaystackSecret?: boolean;
+}
+
+export interface SubscriptionStatusResponse {
+  active: boolean;
+  isAdmin: boolean;
+  planId?: 'monthly' | 'quarterly' | 'yearly';
+  planName?: string;
+  expiresAt?: string | null;
 }
 
 export interface AdminAnalyticsDashboardData {
@@ -226,6 +244,56 @@ export async function recordSubscriptionCheckout(params: {
     });
   } catch {
     // non-fatal
+  }
+}
+
+export async function fetchSubscriptionStatus(): Promise<SubscriptionStatusResponse> {
+  try {
+    const res = await fetch('/api/analytics/subscription-status', {
+      headers: { ...getAdminAuthHeaders() },
+    });
+    if (!res.ok) return { active: false, isAdmin: false };
+    return await res.json();
+  } catch {
+    return { active: false, isAdmin: false };
+  }
+}
+
+export async function verifyPaystackPayment(payload: {
+  reference: string;
+  planId: 'monthly' | 'quarterly' | 'yearly';
+  userEmail: string;
+  paymentMethod?: 'momo' | 'card';
+  previewFallback?: boolean;
+}): Promise<{ ok: boolean; active: boolean; planId: string; expiresAt: string; error?: string }> {
+  const res = await fetch('/api/analytics/paystack/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Payment verification failed');
+  }
+  return data;
+}
+
+export async function grantAdminSubscription(payload: {
+  userEmail: string;
+  planId: 'monthly' | 'quarterly' | 'yearly';
+  amount?: number;
+}): Promise<void> {
+  const res = await fetch('/api/analytics/admin/grant-subscription', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAdminAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to grant subscription');
   }
 }
 

@@ -27,8 +27,10 @@ import {
 } from 'lucide-react';
 import {
   fetchAdminAnalyticsDashboard,
+  grantAdminSubscription,
   logAdminManualRevenue,
   saveAdminMonetizationConfig,
+  type AccessMode,
   type AdminAnalyticsDashboardData,
   type MonetizationConfig,
 } from '../services/analytics';
@@ -622,6 +624,30 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
   const [revNotes, setRevNotes] = useState('');
   const [loggingRev, setLoggingRev] = useState(false);
 
+  // Admin 1-click grant subscription state
+  const [grantEmail, setGrantEmail] = useState('');
+  const [grantPlanId, setGrantPlanId] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [grantingSub, setGrantingSub] = useState(false);
+
+  const handleGrantSub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grantEmail.trim() || grantingSub) return;
+    setGrantingSub(true);
+    try {
+      await grantAdminSubscription({
+        userEmail: grantEmail.trim(),
+        planId: grantPlanId,
+      });
+      setGrantEmail('');
+      onNotify?.(`Granted ${grantPlanId} Premium access to ${grantEmail.trim()}!`);
+      await loadData(rangeDays);
+    } catch (err) {
+      onNotify?.((err as Error).message || 'Could not grant subscription');
+    } finally {
+      setGrantingSub(false);
+    }
+  };
+
   const loadData = async (days = rangeDays) => {
     setLoading(true);
     setError('');
@@ -1099,11 +1125,49 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
                   </div>
                 </div>
 
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-[#94A3B8]">
+                    Site Access &amp; Subscription Paywall Mode
+                  </span>
+                  <select
+                    value={monetCfg.accessMode || 'soft_paywall'}
+                    onChange={(e) =>
+                      setMonetCfg({ ...monetCfg, accessMode: e.target.value as AccessMode })
+                    }
+                    className="w-full min-h-[40px] px-3 rounded-xl bg-[#0B0D12] border border-[#00E5FF]/35 text-xs font-bold text-[#F8FAFC] outline-none"
+                  >
+                    <option value="soft_paywall">
+                      Soft Paywall + Ads (Browse Free, Subscribe to Watch &amp; Download)
+                    </option>
+                    <option value="freemium">
+                      Freemium + Ads (Watch Free with Ads, Subscribe to Remove Ads)
+                    </option>
+                    <option value="strict_gate">
+                      Strict Members-Only Gate (Must Subscribe Before Entering Site)
+                    </option>
+                  </select>
+                </div>
+
+                <label className="space-y-1 block">
+                  <span className="text-[11px] font-bold text-[#94A3B8]">
+                    Paystack Public Key (MTN MoMo + Telecel + Cards in GHS)
+                  </span>
+                  <input
+                    type="text"
+                    value={monetCfg.paystackPublicKey || ''}
+                    onChange={(e) =>
+                      setMonetCfg({ ...monetCfg, paystackPublicKey: e.target.value })
+                    }
+                    placeholder="pk_live_... or pk_test_..."
+                    className="w-full min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs font-mono text-[#F8FAFC] outline-none focus:border-[#00E5FF]"
+                  />
+                </label>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label className="p-3 rounded-xl bg-[#0B0D12] border border-white/[0.08] flex items-center justify-between gap-2 cursor-pointer">
                     <div>
-                      <div className="text-xs font-bold text-[#F8FAFC]">Enable Site Ads</div>
-                      <div className="text-[10.5px] text-[#94A3B8]">Show banner slot on site</div>
+                      <div className="text-xs font-bold text-[#F8FAFC]">Enable Double Ads</div>
+                      <div className="text-[10.5px] text-[#94A3B8]">Show Slot 1 &amp; Slot 2 banners</div>
                     </div>
                     <input
                       type="checkbox"
@@ -1127,6 +1191,41 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
                       className="w-4 h-4 accent-[#10B981]"
                     />
                   </label>
+                </div>
+
+                {/* Double Ad Slot 2 Controls */}
+                <div className="p-3 rounded-xl bg-[#0B0D12] border border-white/[0.06] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#00E5FF]">
+                      Double Ad — Slot 2 (Movie / Series Detail Page)
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={monetCfg.secondAdEnabled !== false}
+                      onChange={(e) =>
+                        setMonetCfg({ ...monetCfg, secondAdEnabled: e.target.checked })
+                      }
+                      className="w-4 h-4 accent-[#00E5FF]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={monetCfg.secondAdTitle || ''}
+                      onChange={(e) => setMonetCfg({ ...monetCfg, secondAdTitle: e.target.value })}
+                      placeholder="Slot 2 Headline"
+                      className="min-h-[36px] px-3 rounded-lg bg-[#141821] border border-white/10 text-xs text-[#F8FAFC] outline-none"
+                    />
+                    <input
+                      type="url"
+                      value={monetCfg.secondAdLinkUrl || ''}
+                      onChange={(e) =>
+                        setMonetCfg({ ...monetCfg, secondAdLinkUrl: e.target.value })
+                      }
+                      placeholder="Slot 2 Ad / Sponsor URL (optional)"
+                      className="min-h-[36px] px-3 rounded-lg bg-[#141821] border border-white/10 text-xs text-[#F8FAFC] outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1261,6 +1360,46 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
                 >
                   {loggingRev ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   Record Revenue (GHS)
+                </button>
+              </form>
+
+              {/* Admin 1-Click Grant Subscription */}
+              <form
+                onSubmit={handleGrantSub}
+                className="rounded-2xl bg-[#141821] border border-[#FCE18E]/25 p-4 sm:p-5 space-y-3"
+              >
+                <h3 className="text-sm font-extrabold text-[#F8FAFC] flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-[#FCE18E]" />
+                  Grant Premium Access (VIP / Manual MoMo)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px] gap-2.5">
+                  <input
+                    type="email"
+                    required
+                    value={grantEmail}
+                    onChange={(e) => setGrantEmail(e.target.value)}
+                    placeholder="User email (e.g. friend@gmail.com)"
+                    className="min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC] outline-none focus:border-[#FCE18E]"
+                  />
+                  <select
+                    value={grantPlanId}
+                    onChange={(e) =>
+                      setGrantPlanId(e.target.value as 'monthly' | 'quarterly' | 'yearly')
+                    }
+                    className="min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC]"
+                  >
+                    <option value="monthly">Monthly (30d)</option>
+                    <option value="quarterly">Quarterly (90d)</option>
+                    <option value="yearly">Yearly (365d)</option>
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  disabled={grantingSub || !grantEmail.trim()}
+                  className="w-full min-h-[40px] rounded-xl bg-gradient-to-r from-[#FFF1BC] via-[#FCE18E] to-[#F5CD67] disabled:opacity-60 text-[#2B1907] text-xs font-extrabold inline-flex items-center justify-center gap-1.5"
+                >
+                  {grantingSub ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
+                  Activate Subscription Instantly
                 </button>
               </form>
 

@@ -7,6 +7,9 @@ import {
   Smartphone,
   CreditCard,
   User,
+  Loader2,
+  AlertCircle,
+  Lock,
 } from 'lucide-react';
 import {
   PREMIUM_BENEFITS,
@@ -16,14 +19,43 @@ import {
   type PremiumPlan,
   type PremiumPlanId,
 } from './PremiumBenefitIcons';
-import { recordSubscriptionCheckout } from '../services/analytics';
+import { verifyPaystackPayment } from '../services/analytics';
 
 interface PremiumModalProps {
   onClose: () => void;
   userEmail: string | null;
   activePlan: string | null;
+  paystackPublicKey?: string;
+  paywallReason?: string | null;
   onActivatePlan: (planId: PremiumPlanId) => void;
   onOpenSignIn: () => void;
+}
+
+declare global {
+  interface Window {
+    PaystackPop?: {
+      setup: (config: Record<string, unknown>) => { openIframe: () => void };
+    };
+  }
+}
+
+function loadPaystackScript(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('No window'));
+  if (window.PaystackPop) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[src*="js.paystack.co"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Failed to load Paystack')), { once: true });
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://js.paystack.co/v1/inline.js';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Paystack checkout script'));
+    document.head.appendChild(s);
+  });
 }
 
 function computeExpiryDate(planId: PremiumPlanId): string {
@@ -42,11 +74,16 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   onClose,
   userEmail,
   activePlan,
+  paystackPublicKey = '',
+  paywallReason = null,
   onActivatePlan,
   onOpenSignIn,
 }) => {
   const [pendingPlan, setPendingPlan] = useState<PremiumPlan | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'momo' | 'card'>('momo');
+  const [checkoutEmail, setCheckoutEmail] = useState<string>(userEmail || '');
+  const [processingPay, setProcessingPay] = useState<boolean>(false);
+  const [payError, setPayError] = useState<string>('');
   const [unlockedPlan, setUnlockedPlan] = useState<PremiumPlan | null>(null);
   const [validUntil, setValidUntil] = useState<string>(() => {
     try {
@@ -55,6 +92,10 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
       return '';
     }
   });
+
+  useEffect(() => {
+    if (userEmail) setCheckoutEmail(userEmail);
+  }, [userEmail]);
 
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -74,25 +115,100 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   const effectiveValidUntil =
     validUntil || (activePlanObj ? computeExpiryDate(activePlanObj.id) : '');
 
-  const handleConfirmActivate = () => {
-    if (!pendingPlan) return;
-    const expiry = computeExpiryDate(pendingPlan.id);
+  const hasLivePaystack = Boolean(paystackPublicKey && paystackPublicKey.startsWith('pk_'));
+
+  const finalizeVerifiedActivation = (plan: PremiumPlan, expiresAtIso?: string) => {
+    const expiry = expiresAtIso
+      ? new Date(expiresAtIso).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : computeExpiryDate(plan.id);
     try {
       localStorage.setItem('cinepulse_premium_until', expiry);
     } catch {
       // ignore storage quota errors
     }
     setValidUntil(expiry);
-    onActivatePlan(pendingPlan.id);
-    recordSubscriptionCheckout({
-      planId: pendingPlan.id,
-      paymentMethod,
-      userEmail,
-      amount: Number(String(pendingPlan.price).replace(/[^0-9.]/g, '')) || 25,
-      currency: pendingPlan.currency || 'GHS',
-    });
-    setUnlockedPlan(pendingPlan);
+    onActivatePlan(plan.id);
+    setUnlockedPlan(plan);
     setPendingPlan(null);
+  };
+
+  const handleConfirmActivate = async () => {
+    if (!pendingPlan || processingPay) return;
+    setPayError('');
+    const email = (checkoutEmail || userEmail || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setPayError('Please enter your email address (or sign in) so we can link your subscription.');
+      return;
+    }
+
+    const amountGhs = Number(String(pendingPlan.price).replace(/[^0-9.]/g, '')) || 25;
+    const reference = `CP_${pendingPlan.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+    if (hasLivePaystack) {
+      setProcessingPay(true);
+      try {
+        await loadPaystackScript();
+        if (!window.PaystackPop) throw new Error('Paystack checkout unavailable.');
+        const handler = window.PaystackPop.setup({
+          key: paystackPublicKey,
+          email,
+          amount: Math.round(amountGhs * 100), // pesewas
+          currency: 'GHS',
+          ref: reference,
+          channels: paymentMethod === 'momo' ? ['mobile_money', 'card'] : ['card', 'mobile_money'],
+          metadata: {
+            plan_id: pendingPlan.id,
+            plan_name: pendingPlan.name,
+            site: 'cenipluse.xyz',
+          },
+          callback: (response: { reference?: string }) => {
+            const ref = response?.reference || reference;
+            verifyPaystackPayment({
+              reference: ref,
+              planId: pendingPlan.id,
+              userEmail: email,
+              paymentMethod,
+            })
+              .then((res) => {
+                finalizeVerifiedActivation(pendingPlan, res.expiresAt);
+              })
+              .catch((err) => {
+                setPayError((err as Error).message || 'Could not verify Paystack payment.');
+              })
+              .finally(() => setProcessingPay(false));
+          },
+          onClose: () => {
+            setProcessingPay(false);
+          },
+        });
+        handler.openIframe();
+      } catch (err) {
+        setPayError((err as Error).message || 'Could not open Paystack checkout.');
+        setProcessingPay(false);
+      }
+      return;
+    }
+
+    // Preview/Setup Mode when Paystack keys haven't been pasted in Admin Studio yet
+    setProcessingPay(true);
+    try {
+      const res = await verifyPaystackPayment({
+        reference,
+        planId: pendingPlan.id,
+        userEmail: email,
+        paymentMethod,
+        previewFallback: true,
+      });
+      finalizeVerifiedActivation(pendingPlan, res.expiresAt);
+    } catch (err) {
+      setPayError((err as Error).message || 'Activation failed. Please try again.');
+    } finally {
+      setProcessingPay(false);
+    }
   };
 
   return (
@@ -193,6 +309,13 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
 
         {/* Bottom Warm Ivory / Champagne Card */}
         <div className="relative z-10 -mt-3 rounded-2xl bg-gradient-to-b from-[#FFF6D6] via-[#FBF0C9] to-[#F5E4AE] px-4 sm:px-6 pt-5 pb-6 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] text-[#38210E] border border-[#FFEFC2]/70">
+          {paywallReason && !unlockedPlan && (
+            <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-[#3B2516] text-[#FFF2C9] text-xs font-bold flex items-center gap-2 shadow-sm">
+              <Lock className="w-4 h-4 text-[#FCE18E] shrink-0" />
+              <span>{paywallReason}</span>
+            </div>
+          )}
+
           {/* 6 Benefit Badges Row */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-y-3 gap-x-2 mb-5">
             {PREMIUM_BENEFITS.map((benefit) => (
@@ -284,12 +407,47 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#5C3D20] block">
+                  Account Email for Subscription Receipt
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={checkoutEmail}
+                  onChange={(e) => setCheckoutEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/90 border border-[#DFC68B] focus:border-[#D6551B] text-xs font-semibold text-[#361F0D] outline-none"
+                />
+              </div>
+
+              {payError && (
+                <div className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs font-bold text-rose-900 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{payError}</span>
+                </div>
+              )}
+
               <button
                 type="button"
+                disabled={processingPay}
                 onClick={handleConfirmActivate}
-                className="w-full min-h-[44px] rounded-full bg-gradient-to-r from-[#EA7234] to-[#D6551B] hover:brightness-105 active:scale-[0.98] text-white text-sm font-extrabold shadow-sm transition-all"
+                className="w-full min-h-[46px] rounded-full bg-gradient-to-r from-[#EA7234] to-[#D6551B] hover:brightness-105 active:scale-[0.98] disabled:opacity-60 text-white text-sm font-extrabold shadow-sm inline-flex items-center justify-center gap-2 transition-all"
               >
-                Activate {pendingPlan.name} &mdash; {pendingPlan.currency} {pendingPlan.price}
+                {processingPay ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Processing with Paystack...
+                  </>
+                ) : hasLivePaystack ? (
+                  <>
+                    Pay {pendingPlan.currency} {pendingPlan.price} via Paystack ({paymentMethod === 'momo' ? 'MoMo' : 'Card'})
+                  </>
+                ) : (
+                  <>
+                    Activate {pendingPlan.name} &mdash; {pendingPlan.currency} {pendingPlan.price}
+                  </>
+                )}
               </button>
             </div>
           ) : (
