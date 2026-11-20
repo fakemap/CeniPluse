@@ -282,7 +282,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     const sortedHeights = Array.from(byRes.keys()).sort((a, b) => b - a);
     return sortedHeights.map((h, idx) => {
       const matched = byRes.get(h)!;
-      const label = h >= 2160 ? '4K' : `${h}P`;
+      const label = h >= 2160 ? '4K UHD' : h >= 1080 ? '1080P FHD' : h >= 720 ? '720P HD' : `${h}P`;
       const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
       const dlWithQuality = rawDl.includes('quality=')
         ? rawDl.replace(/quality=\d+/i, `quality=${h}`)
