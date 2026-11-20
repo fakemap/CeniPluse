@@ -29,7 +29,7 @@ const DEFAULT_MEDIA_DIR = IS_VERCEL
 
 module.exports = {
   IS_VERCEL,
-  PORT: Number(process.env.PORT) || 4500,
+  PORT: Number(process.env.SERVER_PORT || process.env.PORT) || 4500,
   ROOT_DIR,
   DATA_DIR,
   DB_PATH,

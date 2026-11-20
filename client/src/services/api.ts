@@ -421,12 +421,32 @@ export const backendApi = {
       if (params.title) qs.set('title', params.title);
       if (params.year) qs.set('year', String(params.year));
 
-      const res = await fetch(`/api/scraper/resolve?${qs.toString()}`, { signal });
+      const viteEnv = (
+        import.meta as ImportMeta & { env?: Record<string, string | undefined> }
+      ).env;
+      const scraperBase = String(viteEnv?.VITE_SCRAPER_API_BASE || '')
+        .trim()
+        .replace(/\/+$/, '');
+      const prefixUrl = (u?: string) =>
+        u && scraperBase && u.startsWith('/') ? `${scraperBase}${u}` : u || '';
+
+      const res = await fetch(`${scraperBase}/api/scraper/resolve?${qs.toString()}`, { signal });
       if (!res.ok) return { sources: [], subtitles: [], seasonPacks: [] };
       const data = await res.json();
       return {
-        sources: Array.isArray(data.sources) ? data.sources : [],
-        subtitles: Array.isArray(data.subtitles) ? data.subtitles : [],
+        sources: Array.isArray(data.sources)
+          ? data.sources.map((s: MediaSource) => ({
+              ...s,
+              url: prefixUrl(s.url),
+              downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
+            }))
+          : [],
+        subtitles: Array.isArray(data.subtitles)
+          ? data.subtitles.map((sub: { label: string; lang: string; url: string }) => ({
+              ...sub,
+              url: prefixUrl(sub.url),
+            }))
+          : [],
         seasonPacks: Array.isArray(data.seasonPacks) ? data.seasonPacks : [],
       };
     } catch {

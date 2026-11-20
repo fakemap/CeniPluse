@@ -236,9 +236,11 @@ export async function downloadVideoWithProgress(opts: {
       window.location.hostname.startsWith('192.168.') ||
       window.location.hostname.startsWith('10.'));
 
-  // On localhost / dedicated Node server, hand off BOTH MP4 and HLS directly to the browser's
-  // native download manager so it appears in Chrome's Downloads bar immediately and streams to disk!
-  if (isLocalHost) {
+  // Dedicated Node backend (localhost OR external Bot-Hosting/VPS URL via VITE_SCRAPER_API_BASE)
+  // streams both MP4 and live ffmpeg-remuxed HLS->MP4 directly to Chrome's native Downloads bar!
+  const isDedicatedNodeServer = isLocalHost || /^https?:\/\//i.test(url);
+
+  if (isDedicatedNodeServer) {
     const tierKey = quality.replace(/\D/g, '') || '1080';
     const sep = url.includes('?') ? '&' : '?';
     let dlHref = url;
