@@ -506,11 +506,24 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim();
           if (line.startsWith('#EXT-X-STREAM-INF:')) {
-            const resMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
+            const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
             const avgBwMatch = line.match(/AVERAGE-BANDWIDTH=(\d+)/i);
             const bwMatch = line.match(/(?:^|,)BANDWIDTH=(\d+)/i);
             const bandwidth = Number(avgBwMatch?.[1] || bwMatch?.[1] || 0);
-            const height = resMatch ? Number(resMatch[1]) : 0;
+            const width = resMatch ? Number(resMatch[1]) : 0;
+            const rawHeight = resMatch ? Number(resMatch[2]) : 0;
+            const height =
+              width >= 3800 || rawHeight >= 2000
+                ? 2160
+                : width >= 1800 || rawHeight >= 1000
+                ? 1080
+                : width >= 1200 || rawHeight >= 700
+                ? 720
+                : width >= 800 || rawHeight >= 460
+                ? 480
+                : rawHeight > 0
+                ? 360
+                : 0;
             const nextUri = (lines[i + 1] || '').trim();
             if (height > 0 && nextUri && !nextUri.startsWith('#')) {
               const qualLabel = `${height}p`;
@@ -967,36 +980,62 @@ async function streamHlsAsVideoDownload({
       String(req.query.token)
     )}${qParam}`;
 
+    const ffArgs = [
+      '-loglevel',
+      'warning',
+      '-allowed_extensions',
+      'ALL',
+      '-protocol_whitelist',
+      'file,http,https,tcp,tls,crypto',
+      '-i',
+      localManifestUrl,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:m:language:eng?',
+      '-map',
+      '0:a:0?',
+      '-c',
+      'copy',
+      '-bsf:a',
+      'aac_adtstoasc',
+      '-f',
+      'mp4',
+      '-movflags',
+      'frag_keyframe+empty_moov+default_base_moof',
+      'pipe:1',
+    ];
+
+    if (req.query.probe === '1') {
+      const ff = spawn(FFMPEG_PATH, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let bytes = 0;
+      let errText = '';
+      ff.stdout.on('data', (c) => {
+        bytes += c.length;
+        if (bytes > 50000) ff.kill('SIGKILL');
+      });
+      ff.stderr.on('data', (c) => {
+        if (errText.length < 1500) errText += c.toString('utf8');
+      });
+      const exitCode = await new Promise((resolve) => {
+        const tm = setTimeout(() => {
+          ff.kill('SIGKILL');
+          resolve('timeout');
+        }, 7000);
+        ff.once('close', (code) => {
+          clearTimeout(tm);
+          resolve(code);
+        });
+      });
+      return res.json({ ffmpegPath: FFMPEG_PATH, port: PORT, exitCode, bytes, stderr: errText });
+    }
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     res.setHeader('Cache-Control', 'no-store');
 
-    const ff = spawn(
-      FFMPEG_PATH,
-      [
-        '-loglevel',
-        'error',
-        '-i',
-        localManifestUrl,
-        '-map',
-        '0:v:0',
-        '-map',
-        '0:a:m:language:eng?',
-        '-map',
-        '0:a:0?',
-        '-c',
-        'copy',
-        '-bsf:a',
-        'aac_adtstoasc',
-        '-f',
-        'mp4',
-        '-movflags',
-        'frag_keyframe+empty_moov+default_base_moof',
-        'pipe:1',
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    );
+    const ff = spawn(FFMPEG_PATH, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     ff.stdout.pipe(res);
     ff.stderr.on('data', (chunk) => {
