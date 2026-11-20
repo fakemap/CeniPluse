@@ -56,7 +56,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   detailOpen = false,
   children,
 }) => {
-  const hasFullBleedHero = !detailOpen && (activeRoute === 'home' || activeRoute === 'movies');
+  const hasFullBleedHero = !detailOpen && activeRoute === 'home';
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[#0B0D12] text-[#F8FAFC]">
@@ -73,6 +73,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         uiLanguage={uiLanguage}
         onChangeLanguage={onChangeLanguage}
         transparentOnTop={hasFullBleedHero}
+        activeRoute={activeRoute}
       />
 
       <Sidebar
@@ -88,7 +89,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 
       {/* Full-width edge-to-edge Main Content Area */}
       <main
-        className={`pt-[94px] pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-clip ${
+        className={`${activeRoute === 'search' ? 'pt-[52px]' : 'pt-[94px]'} pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-clip ${
           hasFullBleedHero ? 'md:pt-0' : 'md:pt-16'
         }`}
       >

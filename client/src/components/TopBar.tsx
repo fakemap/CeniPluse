@@ -36,6 +36,7 @@ interface TopBarProps {
   uiLanguage: string;
   onChangeLanguage: (code: string) => void;
   transparentOnTop?: boolean;
+  activeRoute?: string;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -51,6 +52,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   uiLanguage,
   onChangeLanguage,
   transparentOnTop = false,
+  activeRoute = '',
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [mobileLangOpen, setMobileLangOpen] = useState(false);
@@ -454,8 +456,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
       </div>
 
-      {/* Mobile-Only Row 2: Search Bar (Matching MovieBox Reference in Image 2) */}
-      <div className="md:hidden px-3.5 pb-2.5 pt-0.5 w-full relative">
+      {/* Mobile-Only Row 2: Search Bar — hidden on the Search page (which has its own full search input) */}
+      <div className={`md:hidden px-3.5 pb-2.5 pt-0.5 w-full relative ${activeRoute === 'search' ? 'hidden' : ''}`}>
         <div
           className={`flex items-center h-10 rounded-xl bg-[#141821]/80 backdrop-blur-md border transition-all pl-3.5 pr-2 gap-2 ${
             isFocused

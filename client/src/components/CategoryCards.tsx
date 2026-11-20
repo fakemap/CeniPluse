@@ -23,7 +23,7 @@ export const CategoryCards: React.FC<CategoryCardsProps> = ({
 
       {/* ── MOBILE: MovieBox-style horizontal card strip with backdrop imagery ── */}
       <div className="md:hidden relative">
-        <div className="flex gap-2.5 overflow-x-auto pl-5 pr-8 sm:pl-6 scroll-px-5 sm:scroll-px-6 scrollbar-hide pb-1 pt-0.5 snap-x">
+        <div className="flex gap-2.5 overflow-x-auto pl-5 pr-8 sm:pl-6 scroll-px-5 sm:scroll-px-6 scrollbar-hide pb-1 pt-1 snap-x -ml-0">
           {cards.map((card) => {
             const isActive = activeCategoryId === card.id;
             const isAll = card.id === 'all';

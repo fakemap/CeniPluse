@@ -1318,21 +1318,13 @@ export const App: React.FC = () => {
 
       return (
         <div>
-          <HeroCarousel
-            items={movieHeroPool}
-            watchlistIds={watchlistIds}
-            onPlay={handlePlayItem}
-            onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
-            onToggleWatchlist={handleToggleWatchlist}
-          />
+          {/* Movies Page Header — distinct from Home, no hero carousel */}
+          <div className="px-5 sm:px-6 md:px-0 pt-4 pb-3">
+            <h1 className="text-2xl sm:text-3xl font-black text-[#F8FAFC] tracking-tight">Movies</h1>
+            <p className="text-sm text-[#94A3B8] mt-1">Browse &amp; discover films across every genre</p>
+          </div>
 
           <div className="w-full md:px-6 lg:px-8">
-            <SpotlightMiniRail
-              items={trendingMovies.slice(0, 10)}
-              onPlay={handlePlayItem}
-              onSelect={(item) => setSelectedMedia({ item, autoPlay: false })}
-            />
-
             <CategoryCards
               cards={CATEGORY_CARDS}
               activeCategoryId={activeCategoryCard}
