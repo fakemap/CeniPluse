@@ -744,6 +744,17 @@ router.get('/resolve', async (req, res) => {
     sources,
     subtitles: uniqueSubtitles,
     seasonPacks: archiveResult.seasonDownloads || [],
+    ...(req.query.diag === '1'
+      ? {
+          diag: providerResults.map((r, i) => ({
+            e: i + 1,
+            st: r.status,
+            n: r.status === 'fulfilled' ? r.value?.sources?.length || 0 : 0,
+            s: r.status === 'fulfilled' ? r.value?.subtitles?.length || 0 : 0,
+            err: r.status === 'rejected' ? String(r.reason?.message || '').slice(0, 80) : '',
+          })),
+        }
+      : {}),
   };
 
   if (sources.length > 0) {
