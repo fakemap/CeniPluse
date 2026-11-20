@@ -7,6 +7,7 @@ const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
+const { PORT } = require('../config');
 const { isSafeExternalUrl } = require('../middleware/security');
 
 let FFMPEG_PATH = null;
@@ -873,12 +874,48 @@ function resolveRelativeUrl(rawUri, manifestUrl) {
   return `${baseDir}${t}`;
 }
 
-function rewriteM3u8Manifest(body, manifestUrl, referer, origin) {
+function rewriteM3u8Manifest(body, manifestUrl, referer, origin, onlyQuality = '') {
+  let workingBody = body;
+
+  // When onlyQuality is requested (for ffmpeg MP4 remux), keep only the closest video variant
+  if (onlyQuality && workingBody.includes('#EXT-X-STREAM-INF:')) {
+    const targetH = Number(String(onlyQuality).replace(/\D/g, '')) || 1080;
+    const rawLines = workingBody.split('\n');
+    const variants = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      const l = rawLines[i].trim();
+      if (l.startsWith('#EXT-X-STREAM-INF:')) {
+        const resM = l.match(/RESOLUTION=\d+x(\d+)/i);
+        const h = resM ? Number(resM[1]) : 720;
+        variants.push({ idx: i, height: h });
+      }
+    }
+    if (variants.length > 0) {
+      variants.sort((a, b) => Math.abs(a.height - targetH) - Math.abs(b.height - targetH));
+      const keepIdx = variants[0].idx;
+      const filtered = [];
+      for (let i = 0; i < rawLines.length; i++) {
+        const l = rawLines[i].trim();
+        if (l.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES')) continue;
+        if (l.startsWith('#EXT-X-STREAM-INF:')) {
+          if (i === keepIdx) {
+            filtered.push(rawLines[i]);
+            if (rawLines[i + 1] !== undefined) filtered.push(rawLines[i + 1]);
+          }
+          i++; // skip URI line
+          continue;
+        }
+        filtered.push(rawLines[i]);
+      }
+      workingBody = filtered.join('\n');
+    }
+  }
+
   const hasEnglishAudio = /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*(?:LANGUAGE="en|NAME="English)/i.test(
-    body
+    workingBody
   );
 
-  return body
+  return workingBody
     .split('\n')
     .map((line) => {
       let currentLine = line;
@@ -919,6 +956,71 @@ async function streamHlsAsVideoDownload({
   req,
   res,
 }) {
+  // Primary path: let ffmpeg read our local proxy HLS manifest directly so it muxes
+  // BOTH the requested resolution video AND the English audio track into a real .mp4!
+  if (FFMPEG_PATH && req.query.token) {
+    const safeFilename = (filename || 'cinepulse-video.mp4')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/\.ts$/i, '.mp4');
+    const qParam = requestedQuality ? `&onlyQuality=${encodeURIComponent(String(requestedQuality))}` : '';
+    const localManifestUrl = `http://127.0.0.1:${PORT}/api/scraper/proxy?token=${encodeURIComponent(
+      String(req.query.token)
+    )}${qParam}`;
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    const ff = spawn(
+      FFMPEG_PATH,
+      [
+        '-loglevel',
+        'error',
+        '-i',
+        localManifestUrl,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:m:language:eng?',
+        '-map',
+        '0:a:0?',
+        '-c',
+        'copy',
+        '-bsf:a',
+        'aac_adtstoasc',
+        '-f',
+        'mp4',
+        '-movflags',
+        'frag_keyframe+empty_moov+default_base_moof',
+        'pipe:1',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+
+    ff.stdout.pipe(res);
+    ff.stderr.on('data', (chunk) => {
+      console.warn('[FFmpeg HLS->MP4]', chunk.toString('utf8').trim());
+    });
+
+    res.on('close', () => {
+      if (!res.writableEnded && !ff.killed) {
+        try {
+          ff.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    await new Promise((resolve) => {
+      ff.once('close', resolve);
+      ff.once('error', resolve);
+    });
+    if (!res.writableEnded) res.end();
+    return;
+  }
+
   let mediaPlaylistBody = manifestBody;
   let mediaPlaylistUrl = manifestUrl;
 
@@ -1157,7 +1259,9 @@ router.get('/proxy', async (req, res) => {
         }
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
         res.setHeader('Cache-Control', 'no-store');
-        return res.send(rewriteM3u8Manifest(body, rawUrl, referer, origin));
+        return res.send(
+          rewriteM3u8Manifest(body, rawUrl, referer, origin, String(req.query.onlyQuality || ''))
+        );
       }
 
       res.setHeader('Content-Type', ct || 'text/plain');
