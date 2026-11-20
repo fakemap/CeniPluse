@@ -19,4 +19,7 @@ try {
   // Optional: server falls back to system ffmpeg or raw .ts if unavailable
 }
 
-require('./server/index.js');
+const app = require('./server/index.js');
+if (typeof app.startServer === 'function') {
+  app.startServer();
+}

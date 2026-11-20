@@ -140,8 +140,8 @@ app.use((err, req, res, _next) => {
   });
 });
 
-if (!process.env.VERCEL && require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
+function startServer() {
+  return app.listen(PORT, '0.0.0.0', () => {
     console.log('\n======================================================');
     console.log('  CINEBOX — Cinema Streaming & Download Hub Running');
     console.log('======================================================');
@@ -158,4 +158,9 @@ if (!process.env.VERCEL && require.main === module) {
   });
 }
 
+if (!process.env.VERCEL && require.main === module) {
+  startServer();
+}
+
+app.startServer = startServer;
 module.exports = app;
