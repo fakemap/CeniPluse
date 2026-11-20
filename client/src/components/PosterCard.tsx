@@ -36,7 +36,6 @@ export const PosterCard: React.FC<PosterCardProps> = ({
   const leaveTimer = useRef<number | null>(null);
   const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
   const [imgError, setImgError] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
 
   const clearTimers = () => {
     if (enterTimer.current) window.clearTimeout(enterTimer.current);
@@ -107,25 +106,17 @@ export const PosterCard: React.FC<PosterCardProps> = ({
         onKeyDown={handleKeyDown}
         className="group cursor-pointer select-none flex flex-col rounded-xl active:scale-[0.97] transition-transform duration-150"
       >
-        {/* Strict Vertical 2:3 Poster Frame with Shimmer Reveal & Cinema Sheen */}
-        <div ref={posterFrameRef} className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#141821] border border-white/[0.08] cinema-sheen lg:group-hover:border-[#00E5FF]/50 lg:group-hover:shadow-[0_12px_32px_rgba(0,0,0,0.65)] transition-all duration-300">
+        {/* Strict Vertical 2:3 Poster Frame (iOS Safari GPU-safe: zero opacity-0 trap, zero per-card backdrop-blur) */}
+        <div ref={posterFrameRef} className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#141821] border border-white/[0.08] lg:group-hover:border-[#00E5FF]/50 lg:group-hover:shadow-[0_12px_32px_rgba(0,0,0,0.65)] transition-colors duration-200">
           {!imgError && item.poster ? (
-            <>
-              {!imgLoaded && (
-                <div className="absolute inset-0 skeleton-shimmer pointer-events-none" />
-              )}
-              <img
-                src={item.poster}
-                alt={item.title}
-                loading="lazy"
-                decoding="async"
-                onLoad={() => setImgLoaded(true)}
-                onError={() => setImgError(true)}
-                className={`w-full h-full object-cover lg:group-hover:scale-[1.05] transition-all duration-500 ${
-                  imgLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
-              />
-            </>
+            <img
+              src={item.poster}
+              alt={item.title}
+              loading="lazy"
+              decoding="async"
+              onError={() => setImgError(true)}
+              className="w-full h-full object-cover lg:group-hover:scale-[1.05] transition-transform duration-300"
+            />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-[#141821] via-[#1E2430] to-[#0B0D12] p-3 flex flex-col items-center justify-center text-center gap-2">
               <Film className="w-7 h-7 text-[#00E5FF]/60" />
@@ -148,12 +139,12 @@ export const PosterCard: React.FC<PosterCardProps> = ({
           {/* Top-Right Quality / Request Status Tag */}
           {showDirectoryBadges && (isRequestable || item.badge || item.quality) && (
             <span
-              className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9.5px] md:text-[10px] font-extrabold leading-none backdrop-blur-md ${
+              className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9.5px] md:text-[10px] font-extrabold leading-none ${
                 isRequestable
-                  ? 'bg-[#0B0D12]/85 border border-[#FFB800]/50 text-[#FFB800]'
+                  ? 'bg-[#0B0D12]/90 border border-[#FFB800]/50 text-[#FFB800]'
                   : isVip
                   ? 'bg-[#FFB800] text-[#1A1200]'
-                  : 'bg-[#0B0D12]/80 border border-white/15 text-[#00E5FF]'
+                  : 'bg-[#0B0D12]/90 border border-white/15 text-[#00E5FF]'
               }`}
             >
               {topRightLabel}
@@ -161,7 +152,7 @@ export const PosterCard: React.FC<PosterCardProps> = ({
           )}
 
           {/* Bottom-Right Warm Amber Rating Badge */}
-          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-[#0B0D12]/85 backdrop-blur-sm border border-white/[0.06] text-[10px] md:text-[11px] font-bold tabular-nums text-[#FFB800] inline-flex items-center gap-0.5">
+          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-[#0B0D12]/90 border border-white/[0.08] text-[10px] md:text-[11px] font-bold tabular-nums text-[#FFB800] inline-flex items-center gap-0.5">
             <Star className="w-2.5 h-2.5 fill-[#FFB800]" />
             {item.rating.toFixed(1)}
           </span>

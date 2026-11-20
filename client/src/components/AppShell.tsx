@@ -58,7 +58,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   const hasFullBleedHero = !detailOpen && (activeRoute === 'home' || activeRoute === 'movies');
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#0B0D12] text-[#F8FAFC]">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[#0B0D12] text-[#F8FAFC]">
       <TopBar
         onToggleSidebar={onToggleSidebar}
         onGoHome={() => onNavigate('home')}
@@ -87,7 +87,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 
       {/* Full-width edge-to-edge Main Content Area — 0px desktop gutters */}
       <main
-        className={`pt-12 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-hidden ${
+        className={`pt-12 pb-[calc(76px+env(safe-area-inset-bottom))] md:pb-12 min-h-screen w-full overflow-x-clip ${
           hasFullBleedHero ? 'md:pt-0' : 'md:pt-16'
         }`}
       >

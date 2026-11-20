@@ -167,9 +167,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const castSectionRef = useRef<HTMLDivElement>(null);
   const reviewsSectionRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to top when item changes
+  // Scroll to top when item changes (iOS Safari compatible)
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo(0, 0);
   }, [item.id]);
 
   // Load live TMDB details (cast portraits, official trailers, recommendations, seasons, votes)

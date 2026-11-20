@@ -677,7 +677,7 @@ export const App: React.FC = () => {
     } else {
       setDirectoryTypeFilter('all');
     }
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo(0, 0);
   };
 
   const moviesGridRef = useRef<HTMLDivElement>(null);
@@ -741,10 +741,10 @@ export const App: React.FC = () => {
       }, 60);
     } else if (typeFilter === 'animation') {
       setActiveRoute('animation');
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo(0, 0);
     } else {
       setActiveRoute('series');
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo(0, 0);
     }
   };
 
@@ -962,7 +962,7 @@ export const App: React.FC = () => {
           {publishedCatalog.length > 0 && (
             <ContentRail
               title="Featured Releases (Published Live)"
-              items={publishedCatalog}
+              items={publishedCatalog.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
                 openDirectoryWith('Featured Releases', 'all', {
@@ -979,7 +979,7 @@ export const App: React.FC = () => {
           {draftedCatalog.length > 0 && (
             <ContentRail
               title="New & Trending"
-              items={draftedCatalog.slice(0, 24)}
+              items={draftedCatalog.slice(0, 18)}
               watchlistIds={watchlistIds}
               onMore={() =>
                 openDirectoryWith('All Newly Added Releases', 'all', {
@@ -994,7 +994,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Trending Movies"
-            items={trendingMovies}
+            items={trendingMovies.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('Trending Movies', 'movie', { sortBy: 'Hottest' })}
             onPlay={handlePlayItem}
@@ -1004,7 +1004,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Trending Series"
-            items={trendingSeries}
+            items={trendingSeries.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('Trending Series', 'series', { sortBy: 'Hottest' })}
             onPlay={handlePlayItem}
@@ -1014,7 +1014,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Popular Series"
-            items={popularSeries}
+            items={popularSeries.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('All Series', 'series', { sortBy: 'Hottest' })}
             onPlay={handlePlayItem}
@@ -1024,7 +1024,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Regional Hits — Nollywood"
-            items={regionalNollywood}
+            items={regionalNollywood.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() =>
               openDirectoryWith('Nollywood & African Cinema', 'all', { country: 'Nigeria' })
@@ -1036,7 +1036,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Animation, Cartoons &amp; Anime"
-            items={animationItems}
+            items={animationItems.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('Animation, Cartoons & Anime', 'animation')}
             onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}
@@ -1046,7 +1046,7 @@ export const App: React.FC = () => {
 
           <ContentRail
             title="Top Rated"
-            items={topRatedAll}
+            items={topRatedAll.slice(0, 18)}
             watchlistIds={watchlistIds}
             onMore={() => openDirectoryWith('Top Rated Cinema', 'all', { sortBy: 'Top Rated' })}
             onPlay={(item) => setSelectedMedia({ item, autoPlay: true })}

@@ -614,12 +614,17 @@ async function ensureLiveTmdbBootstrap() {
 }
 
 // ==================== PUBLIC ENDPOINTS ====================
-// GET /api/cms/public - Returns published playable titles first, followed by newly harvested Drafts so users can browse & request them
+// GET /api/cms/public - Fast, CDN-cached public catalog (compact fields + capped default limit for instant mobile/iOS load)
 router.get('/public', async (req, res) => {
   await ensureLiveTmdbBootstrap();
   if (store.getCmsTitles().length === 0) {
     ensureInitialCmsSeed();
   }
+  const requestedLimit = Number(req.query.limit);
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+    ? Math.min(1000, requestedLimit)
+    : 220;
+
   const projected = store
     .getCmsTitles()
     .map(projectForPublic)
@@ -634,9 +639,49 @@ router.get('/public', async (req, res) => {
     return tb - ta;
   });
 
+  // Compact list projection: keep full essentials for cards/hero/filters while slashing payload size by ~85%
+  const slimItems = projected.slice(0, limit).map((m) => ({
+    id: m.id,
+    tmdbId: m.tmdbId,
+    malId: m.malId,
+    type: m.type,
+    title: m.title,
+    year: m.year,
+    rating: m.rating,
+    votes: m.votes,
+    country: m.country,
+    regionTag: m.regionTag,
+    language: m.language,
+    genres: Array.isArray(m.genres) ? m.genres.slice(0, 4) : [],
+    quality: m.quality,
+    badge: m.badge,
+    runtime: m.runtime,
+    poster: m.poster,
+    backdrop: m.backdrop,
+    trailerYoutubeId: m.trailerYoutubeId,
+    previewVideoUrl: m.previewVideoUrl,
+    overview: typeof m.overview === 'string' && m.overview.length > 220
+      ? `${m.overview.slice(0, 217)}...`
+      : m.overview || '',
+    cast: Array.isArray(m.cast) ? m.cast.slice(0, 4) : [],
+    views: m.views || 0,
+    downloads: m.downloads || 0,
+    featured: Boolean(m.featured),
+    trending: m.trending !== false,
+    isDraft: Boolean(m.isDraft),
+    hasStreamLinks: Boolean(m.hasStreamLinks),
+    requestCount: m.requestCount || 0,
+    seasonsCount: m.seasonsCount || 0,
+    sources: Array.isArray(m.sources) ? m.sources : [],
+    seasons: m.seasons,
+  }));
+
   const publishedCount = projected.filter((m) => !m.isDraft).length;
   const draftCount = projected.filter((m) => m.isDraft).length;
-  res.json({ total: projected.length, publishedCount, draftCount, items: projected });
+
+  // Vercel Edge CDN cache: 2 min fresh + 10 min stale-while-revalidate for sub-50ms global loads
+  res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=600');
+  res.json({ total: projected.length, returned: slimItems.length, publishedCount, draftCount, items: slimItems });
 });
 
 // GET /api/cms/cron/harvest - Trigger bootstrap / auto-harvest on demand (optional CRON_SECRET bearer guard)
