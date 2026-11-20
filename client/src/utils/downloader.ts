@@ -236,7 +236,28 @@ export async function downloadVideoWithProgress(opts: {
       window.location.hostname.startsWith('192.168.') ||
       window.location.hostname.startsWith('10.'));
 
-  // HLS streams always use in-browser parallel segment assembly so they work on Vercel AND localhost
+  // On localhost / dedicated Node server, hand off BOTH MP4 and HLS directly to the browser's
+  // native download manager so it appears in Chrome's Downloads bar immediately and streams to disk!
+  if (isLocalHost) {
+    const tierKey = quality.replace(/\D/g, '') || '1080';
+    const sep = url.includes('?') ? '&' : '?';
+    let dlHref = url;
+    if (!dlHref.includes('download=1')) dlHref += `${sep}download=1`;
+    if (!dlHref.includes('quality=')) dlHref += `&quality=${tierKey}`;
+    if (!dlHref.includes('filename=')) dlHref += `&filename=${encodeURIComponent(filename)}`;
+
+    const a = document.createElement('a');
+    a.href = dlHref;
+    a.download = filename;
+    a.rel = 'noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    onProgress?.({ percent: 100, loadedBytes: 0, label: 'Video download started in your browser!' });
+    return;
+  }
+
+  // On Vercel / serverless: HLS uses in-browser parallel segment assembly (each < 3MB)
   if (sourceType === 'hls') {
     return downloadHlsInBrowser({
       manifestUrl: url,
@@ -247,7 +268,7 @@ export async function downloadVideoWithProgress(opts: {
     });
   }
 
-  // Direct MP4: probe first 2 bytes to verify reachability & get total file size
+  // On Vercel / serverless: probe MP4 first 2 bytes to verify reachability & get total file size
   const baseUrl = url
     .replace(/([?&])download=1(&|$)/g, (_, p1, p2) => (p2 ? p1 : ''))
     .replace(/[?&]$/, '');
@@ -261,23 +282,6 @@ export async function downloadVideoWithProgress(opts: {
 
   if (!probeRes.ok && probeRes.status !== 206) {
     throw new Error(`Download server returned HTTP ${probeRes.status}`);
-  }
-
-  // On localhost / dedicated Node server, hand off directly to the browser's native download manager!
-  if (isLocalHost) {
-    const sep = url.includes('?') ? '&' : '?';
-    const dlHref = `${url}${url.includes('download=1') ? '' : `${sep}download=1`}&filename=${encodeURIComponent(
-      filename
-    )}`;
-    const a = document.createElement('a');
-    a.href = dlHref;
-    a.download = filename;
-    a.rel = 'noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    onProgress?.({ percent: 100, loadedBytes: 0, label: 'Download started in your browser!' });
-    return;
   }
 
   // On Vercel / serverless: fetch MP4 in 3 MB Range chunks (under 4.5 MB response limit)

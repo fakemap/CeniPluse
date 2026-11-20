@@ -408,7 +408,6 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     setDownloadProgress(null);
 
     let candidateSources = [...downloadableSources];
-    let candidateSubs = [...resolvedModalSubs];
 
     // If user clicked download before links finished resolving, resolve on-demand immediately
     if (candidateSources.length === 0 && item.tmdbId) {
@@ -427,7 +426,6 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           setResolvedModalSources(res.sources);
         }
         if (res.subtitles && res.subtitles.length > 0) {
-          candidateSubs = res.subtitles;
           setResolvedModalSubs(res.subtitles);
         }
       } finally {
@@ -436,10 +434,6 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     }
 
     if (candidateSources.length === 0) {
-      // Even if video servers are temporarily busy, still download the selected subtitle if available
-      if (activeSubObj && activeSubObj.url && activeSubObj.code !== 'none') {
-        await handleDownloadSubtitleOnly(activeSubObj);
-      }
       setDownloadError(
         'Direct video download mirrors are temporarily busy for this title. Please try again in a moment or switch to another quality.'
       );
@@ -461,24 +455,6 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     const controller = new AbortController();
     downloadAbortRef.current = controller;
     setDownloadingVideo(true);
-
-    // Download selected subtitle first (tiny ~50 KB file, instant)
-    const subToFetch =
-      activeSubObj && activeSubObj.url && activeSubObj.code !== 'none'
-        ? activeSubObj
-        : candidateSubs[0] && selectedSub !== 'none'
-        ? { code: 'sub_0', label: candidateSubs[0].label, size: 'VTT', url: candidateSubs[0].url }
-        : null;
-
-    if (subToFetch?.url) {
-      const subName = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}.${subToFetch.label.replace(
-        /[^a-zA-Z0-9._-]/g,
-        '_'
-      )}.vtt`;
-      downloadSubtitleFile(subToFetch.url, subName).catch(() => {
-        // non-fatal if subtitle fails while video succeeds
-      });
-    }
 
     let lastErr = '';
     let succeeded = false;
@@ -514,9 +490,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
         });
 
         setDownloadStatus(
-          `Saved ${videoFilename}${
-            subToFetch ? ` + ${subToFetch.label} (.VTT) subtitle` : ''
-          } to your downloads.`
+          `Video download started in your browser (${videoFilename}).`
         );
         succeeded = true;
         break;
