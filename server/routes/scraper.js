@@ -481,7 +481,7 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
           if (line.startsWith('#EXT-X-STREAM-INF:')) {
             const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
             const avgBwMatch = line.match(/AVERAGE-BANDWIDTH=(\d+)/i);
-            const bwMatch = line.match(/(?:^|,)BANDWIDTH=(\d+)/i);
+            const bwMatch = line.match(/(?:^|[:,])BANDWIDTH=(\d+)/i);
             const bandwidth = Number(avgBwMatch?.[1] || bwMatch?.[1] || 0);
             const width = resMatch ? Number(resMatch[1]) : 0;
             const rawHeight = resMatch ? Number(resMatch[2]) : 0;

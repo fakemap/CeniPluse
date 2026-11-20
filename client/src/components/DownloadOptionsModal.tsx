@@ -291,10 +291,11 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       const bw = Number((matched as MediaSource & { bandwidth?: number }).bandwidth || 0);
       let displaySize = matched.size || '';
       if (matched.type === 'hls' && bw > 0) {
-        displaySize = formatEstBytes((bw / 8) * runtimeSec);
-      } else if (!displaySize || /adaptive/i.test(displaySize)) {
-        // Fallback bitrate-based estimate using actual movie runtime
-        const estBps = h >= 1080 ? 2_200_000 : h >= 720 ? 1_200_000 : h >= 480 ? 680_000 : 400_000;
+        // Include ~128 kbps audio track and 0.85 VBR factor for realistic total MP4 size
+        const totalBps = bw * 0.85 + 128_000;
+        displaySize = formatEstBytes((totalBps / 8) * runtimeSec);
+      } else if (!displaySize || /adaptive|~/i.test(displaySize)) {
+        const estBps = h >= 1080 ? 2_400_000 : h >= 720 ? 1_650_000 : h >= 480 ? 1_050_000 : 500_000;
         displaySize = formatEstBytes((estBps / 8) * runtimeSec);
       }
 
