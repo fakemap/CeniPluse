@@ -43,27 +43,15 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
     setHasSnippet(false);
   }, [item.id]);
 
-  // Compute clamped viewport coordinates and edge-aware transformOrigin
-  const cardWidth = 312;
-  const estimatedHeight = 332;
-  const centerX = anchorRect.left + anchorRect.width / 2;
-  const centerY = anchorRect.top + anchorRect.height / 2;
-
-  const padding = 20;
-  const minX = cardWidth / 2 + padding;
-  const maxX = window.innerWidth - cardWidth / 2 - padding;
-  const clampedX = Math.max(minX, Math.min(maxX, centerX));
-  const clampedY = Math.max(
-    estimatedHeight / 2 + 72,
-    Math.min(window.innerHeight - estimatedHeight / 2 - padding, centerY)
-  );
-
-  const transformOrigin =
-    centerX <= minX + 24
-      ? 'left center'
-      : centerX >= maxX - 24
-      ? 'right center'
-      : 'center center';
+  // Overlay the hover card exactly on top of the poster frame (same footprint as the poster),
+  // with a sensible minimum size on small rails, clamped inside the viewport.
+  const padding = 12;
+  const cardWidth = Math.max(anchorRect.width, 260);
+  const cardHeight = Math.max(anchorRect.height, 390);
+  const rawLeft = anchorRect.left - (cardWidth - anchorRect.width) / 2;
+  const rawTop = anchorRect.top - (cardHeight - anchorRect.height) / 2;
+  const left = Math.max(padding, Math.min(window.innerWidth - cardWidth - padding, rawLeft));
+  const top = Math.max(64, Math.min(window.innerHeight - cardHeight - padding, rawTop));
 
   return createPortal(
     <div
@@ -71,17 +59,18 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
       onMouseLeave={onMouseLeave}
       style={{
         position: 'fixed',
-        left: `${clampedX}px`,
-        top: `${clampedY}px`,
+        left: `${left}px`,
+        top: `${top}px`,
         width: `${cardWidth}px`,
-        transformOrigin,
+        height: `${cardHeight}px`,
+        transformOrigin: 'center center',
       }}
-      className="z-[90] animate-hover-card rounded-2xl overflow-hidden bg-[#141821]/95 backdrop-blur-2xl border border-[#00E5FF]/40 cinema-sheen shadow-[0_28px_70px_rgba(0,0,0,0.9)]"
+      className="z-[90] animate-hover-card flex flex-col rounded-xl overflow-hidden bg-[#141821] border border-[#00E5FF]/50 cinema-sheen shadow-[0_28px_70px_rgba(0,0,0,0.9)]"
     >
-      {/* Top 16:9 Trailer Video Preview Area */}
+      {/* Trailer Video Preview Area — fills all space above the info panel */}
       <div
         onClick={() => onSelect(item)}
-        className="relative aspect-video bg-[#0B0D12] overflow-hidden cursor-pointer"
+        className="relative flex-1 min-h-0 bg-[#0B0D12] overflow-hidden cursor-pointer"
       >
         <img
           src={item.backdrop || item.poster}
@@ -101,7 +90,7 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
           onHasSnippetChange={setHasSnippet}
         />
 
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#141821] via-transparent to-black/35" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#141821] via-transparent to-black/80" />
 
         {/* Top-left Status Tag */}
         <span
@@ -118,7 +107,7 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
             ? 'PREVIEW'
             : item.trailerYoutubeId
             ? 'Trailer Preview'
-            : 'Request Movie'}
+            : 'Details'}
         </span>
 
         {/* Top-right Mute / Unmute Button (for any MP4, HLS, or YouTube snippet) */}
@@ -138,7 +127,7 @@ export const HoverPreviewCard: React.FC<HoverPreviewCardProps> = ({
       </div>
 
       {/* Bottom Metadata + Actions */}
-      <div className="p-3.5 space-y-2.5">
+      <div className="shrink-0 p-3.5 space-y-2.5 bg-[#141821]">
         <div>
           <h4
             onClick={() => onSelect(item)}

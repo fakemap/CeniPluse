@@ -267,16 +267,17 @@ export const SnippetPlayer: React.FC<SnippetPlayerProps> = ({
       tabIndex={-1}
       onLoad={() => {
         if (loadTimerRef.current) window.clearTimeout(loadTimerRef.current);
+        // Keep the poster visible until YouTube's initial title/controls overlay has faded out
         loadTimerRef.current = window.setTimeout(() => {
           setReady(true);
-        }, 650);
+        }, variant === 'card' ? 2400 : 650);
       }}
       className={
         variant === 'hero'
           ? `pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[max(100%,1160px)] aspect-video scale-[1.12] border-0 transition-opacity duration-700 ${
               ready ? 'opacity-100' : 'opacity-0'
             }`
-          : `pointer-events-none absolute inset-0 w-full h-full scale-[1.28] border-0 transition-opacity duration-500 ${
+          : `pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[150%] min-w-[150%] aspect-video border-0 transition-opacity duration-500 ${
               ready ? 'opacity-100' : 'opacity-0'
             }`
       }

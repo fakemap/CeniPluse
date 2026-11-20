@@ -31,6 +31,7 @@ export const PosterCard: React.FC<PosterCardProps> = ({
   onToggleWatchlist,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
+  const posterFrameRef = useRef<HTMLDivElement>(null);
   const enterTimer = useRef<number | null>(null);
   const leaveTimer = useRef<number | null>(null);
   const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
@@ -56,8 +57,9 @@ export const PosterCard: React.FC<PosterCardProps> = ({
     if (!isFineDesktopPointer()) return;
     if (leaveTimer.current) window.clearTimeout(leaveTimer.current);
     enterTimer.current = window.setTimeout(() => {
-      if (cardRef.current) {
-        setPreviewRect(cardRef.current.getBoundingClientRect());
+      const anchorEl = posterFrameRef.current || cardRef.current;
+      if (anchorEl) {
+        setPreviewRect(anchorEl.getBoundingClientRect());
       }
     }, 280);
   };
@@ -106,7 +108,7 @@ export const PosterCard: React.FC<PosterCardProps> = ({
         className="group cursor-pointer select-none flex flex-col rounded-xl active:scale-[0.97] transition-transform duration-150"
       >
         {/* Strict Vertical 2:3 Poster Frame with Shimmer Reveal & Cinema Sheen */}
-        <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#141821] border border-white/[0.08] cinema-sheen lg:group-hover:border-[#00E5FF]/50 lg:group-hover:shadow-[0_12px_32px_rgba(0,0,0,0.65)] transition-all duration-300">
+        <div ref={posterFrameRef} className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#141821] border border-white/[0.08] cinema-sheen lg:group-hover:border-[#00E5FF]/50 lg:group-hover:shadow-[0_12px_32px_rgba(0,0,0,0.65)] transition-all duration-300">
           {!imgError && item.poster ? (
             <>
               {!imgLoaded && (
