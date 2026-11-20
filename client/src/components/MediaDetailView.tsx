@@ -782,7 +782,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const ensureSubscribedFor = (actionLabel: string): boolean => {
     if (!isPaywallEnforced) return true;
     onRequireSubscription?.(
-      `Subscribe to CinePulse Premium (from GHS 25/mo via MoMo or Card) to ${actionLabel}.`
+      `Subscribe to CeniPluse Premium (from GHS 25/mo via MoMo or Card) to ${actionLabel}.`
     );
     return false;
   };
@@ -1619,7 +1619,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         placement="media_detail_top"
         onOpenPremium={() =>
           onRequireSubscription?.(
-            'Go 100% Ad-Free and unlock unlimited HD streaming & downloads with CinePulse Premium.'
+            'Go 100% Ad-Free and unlock unlimited HD streaming & downloads with CeniPluse Premium.'
           )
         }
       />

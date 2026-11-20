@@ -17,6 +17,9 @@ import {
   ShieldCheck,
   LogOut,
   ArrowLeft,
+  Share2,
+  Download,
+  Sparkles,
 } from 'lucide-react';
 import { PremiumModal } from './PremiumModal';
 import type { PremiumPlanId } from './PremiumBenefitIcons';
@@ -87,6 +90,39 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
   const [signingOut, setSigningOut] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
+  const [appTab, setAppTab] = useState<'ios' | 'android' | 'desktop'>('ios');
+  const [canPromptInstall, setCanPromptInstall] = useState(false);
+
+  useEffect(() => {
+    const checkPrompt = () => {
+      const hasPrompt = Boolean(
+        (window as unknown as { __cenipluse_install_prompt?: unknown }).__cenipluse_install_prompt
+      );
+      setCanPromptInstall(hasPrompt);
+    };
+    checkPrompt();
+    window.addEventListener('cenipluse:can-install', checkPrompt);
+    return () => window.removeEventListener('cenipluse:can-install', checkPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    const promptEvent = (
+      window as unknown as {
+        __cenipluse_install_prompt?: {
+          prompt: () => void;
+          userChoice: Promise<{ outcome: string }>;
+        };
+      }
+    ).__cenipluse_install_prompt;
+    if (promptEvent) {
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice.outcome === 'accepted') {
+        setCanPromptInstall(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (modal === 'signin') {
@@ -183,7 +219,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
   };
 
   const displayName =
-    userProfile?.fullName || (userEmail ? userEmail.split('@')[0] : 'CinePulse Member');
+    userProfile?.fullName || (userEmail ? userEmail.split('@')[0] : 'CeniPluse Member');
   const isAdmin = userProfile?.role === 'admin';
   const initials = displayName
     .split(/\s+/)
@@ -214,44 +250,198 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
         </button>
 
         {modal === 'app' && (
-          <div className="p-6 space-y-4">
-            <div>
-              <h3 className="text-xl font-extrabold text-[#F8FAFC]">Get CinePulse Everywhere</h3>
+          <div className="p-5 sm:p-6 space-y-4">
+            <div className="pr-8">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] font-bold mb-1.5">
+                <Sparkles className="w-3 h-3" />
+                <span>Web App & PWA Ready</span>
+              </div>
+              <h3 className="text-lg sm:text-xl font-extrabold text-[#F8FAFC]">Install CeniPluse on Your Device</h3>
               <p className="text-xs text-[#94A3B8] mt-1">
-                Install the native client or open your local Wi-Fi URL directly from any phone or Smart TV.
+                Add CeniPluse to your Home Screen for instant 1-tap streaming, full-screen playback, and zero browser bars.
               </p>
             </div>
 
-            <div className="space-y-2.5">
-              {[
-                { icon: Smartphone, title: 'Android & iOS App', desc: 'Offline smart downloads & mobile data saver', tag: 'v4.2' },
-                { icon: Monitor, title: 'Windows & macOS Desktop', desc: 'Hardware-accelerated 4K HLS & local drive sync', tag: 'EXE / DMG' },
-                { icon: Tv2, title: 'Android TV & Fire TV', desc: 'Remote-friendly 10-foot leanback interface', tag: 'TV APK' },
-              ].map(({ icon: Icon, title, desc, tag }) => (
-                <div
-                  key={title}
-                  className="p-3 rounded-xl bg-[#0B0D12] border border-white/[0.07] flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-[#1E2430] text-[#00E5FF] flex items-center justify-center shrink-0">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold text-[#F8FAFC] truncate">{title}</div>
-                      <div className="text-[11px] text-[#94A3B8] truncate">{desc}</div>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-[#10B981]/15 text-[#10B981] text-[10px] font-bold shrink-0">
-                    {tag}
-                  </span>
-                </div>
-              ))}
+            {/* Platform Selector Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#0B0D12] border border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setAppTab('ios')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  appTab === 'ios'
+                    ? 'bg-[#1E2430] text-[#00E5FF] shadow-sm'
+                    : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                }`}
+              >
+                <span>🍏 iPhone / iPad</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAppTab('android')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  appTab === 'android'
+                    ? 'bg-[#1E2430] text-[#10B981] shadow-sm'
+                    : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                }`}
+              >
+                <span>🤖 Android</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAppTab('desktop')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  appTab === 'desktop'
+                    ? 'bg-[#1E2430] text-[#CBD5E1] shadow-sm'
+                    : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                }`}
+              >
+                <span>💻 PC &amp; TV</span>
+              </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-[#00E5FF]/10 border border-[#00E5FF]/25 text-xs text-[#00E5FF] flex items-center gap-2">
-              <Wifi className="w-4 h-4 shrink-0" />
-              <span>Local Wi-Fi Stream URL: <strong>{window.location.origin}</strong></span>
-            </div>
+            {/* iOS Instructions */}
+            {appTab === 'ios' && (
+              <div className="space-y-3 rounded-xl bg-[#0B0D12] border border-white/[0.08] p-4 text-xs">
+                <div className="font-extrabold text-[#F8FAFC] flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] flex items-center justify-center text-[11px] font-black">
+                    iOS
+                  </span>
+                  <span>How to add CeniPluse on iPhone &amp; iPad:</span>
+                </div>
+
+                <div className="space-y-2.5 text-[#CBD5E1]">
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      1
+                    </span>
+                    <span>
+                      Open <strong>Safari</strong> on your iPhone and visit{' '}
+                      <code className="text-[#00E5FF] px-1 py-0.5 rounded bg-white/5">cenipluse.xyz</code>
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      2
+                    </span>
+                    <span>
+                      Tap the <strong className="text-white">Share</strong> button{' '}
+                      <Share2 className="w-3.5 h-3.5 inline text-[#00E5FF] -mt-0.5 mx-0.5" /> in the bottom toolbar of Safari.
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      3
+                    </span>
+                    <span>
+                      Scroll down the list and tap <strong className="text-white">&ldquo;Add to Home Screen&rdquo;</strong>.
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      4
+                    </span>
+                    <span>
+                      Tap <strong className="text-[#10B981]">&ldquo;Add&rdquo;</strong> in the top-right corner. CeniPluse will appear on your Home Screen as an official app!
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/5 text-[11px] text-[#94A3B8]">
+                  💡 <strong>Tip:</strong> Opening from the Home Screen gives you full-screen theater mode with no browser tabs or address bars.
+                </div>
+              </div>
+            )}
+
+            {/* Android Instructions */}
+            {appTab === 'android' && (
+              <div className="space-y-3 rounded-xl bg-[#0B0D12] border border-white/[0.08] p-4 text-xs">
+                {canPromptInstall && (
+                  <button
+                    type="button"
+                    onClick={handleInstallClick}
+                    className="w-full h-11 rounded-xl bg-[#10B981] hover:brightness-110 active:scale-[0.98] text-[#041811] font-extrabold text-xs inline-flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#10B981]/20"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Install CeniPluse App Now</span>
+                  </button>
+                )}
+
+                <div className="font-extrabold text-[#F8FAFC] flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-[#10B981]/20 text-[#10B981] flex items-center justify-center text-[11px] font-black">
+                    Android
+                  </span>
+                  <span>How to install on Android (Chrome / Brave / Edge):</span>
+                </div>
+
+                <div className="space-y-2.5 text-[#CBD5E1]">
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      1
+                    </span>
+                    <span>
+                      Open <strong>Chrome</strong> and tap the <strong className="text-white">three dots menu (&vellip;)</strong> in the top-right.
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      2
+                    </span>
+                    <span>
+                      Select <strong className="text-white">&ldquo;Install app&rdquo;</strong> or <strong className="text-white">&ldquo;Add to Home screen&rdquo;</strong>.
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-white/10 text-white flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                      3
+                    </span>
+                    <span>
+                      Tap <strong className="text-[#10B981]">&ldquo;Install&rdquo;</strong>. CeniPluse will download and install right onto your phone with an app icon!
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/5 text-[11px] text-[#94A3B8]">
+                  🚀 Supports offline cache, push updates, and HD video streaming directly from your phone app grid.
+                </div>
+              </div>
+            )}
+
+            {/* Desktop & Smart TV */}
+            {appTab === 'desktop' && (
+              <div className="space-y-3 rounded-xl bg-[#0B0D12] border border-white/[0.08] p-4 text-xs">
+                <div className="space-y-2 text-[#CBD5E1]">
+                  <div className="p-3 rounded-lg bg-white/5 space-y-1">
+                    <div className="font-extrabold text-[#F8FAFC] flex items-center gap-1.5">
+                      <Monitor className="w-3.5 h-3.5 text-[#00E5FF]" />
+                      <span>Windows &amp; Mac Desktop:</span>
+                    </div>
+                    <p className="text-[11px] text-[#94A3B8]">
+                      In Chrome or Edge, click the install icon in the right side of the address bar to install CeniPluse as a desktop app.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-white/5 space-y-1">
+                    <div className="font-extrabold text-[#F8FAFC] flex items-center gap-1.5">
+                      <Tv2 className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span>Smart TV &amp; Fire TV:</span>
+                    </div>
+                    <p className="text-[11px] text-[#94A3B8]">
+                      Open the browser on your TV (Silk, Chrome, or LG WebOS) and navigate to <strong>cenipluse.xyz</strong> for 10-foot theater streaming.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-[#00E5FF]/10 border border-[#00E5FF]/25 text-xs text-[#00E5FF] flex items-center gap-2">
+                  <Wifi className="w-4 h-4 shrink-0" />
+                  <span>Site URL: <strong>https://www.cenipluse.xyz</strong></span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -354,7 +544,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                   ) : null}
                   <h3 className="text-xl font-extrabold text-[#F8FAFC] tracking-tight">
                     {authTab === 'signup'
-                      ? 'Create your CinePulse account'
+                      ? 'Create your CeniPluse account'
                       : authTab === 'reset'
                       ? 'Reset your password'
                       : 'Welcome back'}
@@ -364,7 +554,7 @@ export const ActionModals: React.FC<ActionModalsProps> = ({
                       ? 'Sync your Watchlist, continue watching, and downloads across devices.'
                       : authTab === 'reset'
                       ? 'Enter your account email and we will send a secure password reset link.'
-                      : 'Sign in to CinePulse or access the Admin Studio.'}
+                      : 'Sign in to CeniPluse or access the Admin Studio.'}
                   </p>
                 </div>
 

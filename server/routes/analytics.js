@@ -42,7 +42,7 @@ const DEFAULT_MONETIZATION_CONFIG = {
   secondAdEnabled: false,
   secondAdNetworkName: 'Partner Offer',
   secondAdTitle: 'Watch Without Limits — Zero Ads, Instant HD Downloads',
-  secondAdSubtitle: 'Upgrade to CinePulse Premium for instant access to every movie, series & subtitle.',
+  secondAdSubtitle: 'Upgrade to CeniPluse Premium for instant access to every movie, series & subtitle.',
   secondAdCtaText: 'Go Premium',
   secondAdLinkUrl: '',
   ecpmGhs: 18.0,
@@ -157,7 +157,7 @@ router.post('/subscription', async (req, res) => {
     status: 'completed',
     user_email: userEmail,
     reference,
-    notes: sanitizeString(b.notes || `CinePulse ${planInfo.name} Premium`, 200),
+    notes: sanitizeString(b.notes || `CeniPluse ${planInfo.name} Premium`, 200),
   };
 
   localRevenueFallback.unshift({ ...txRow, id: Date.now(), created_at: new Date().toISOString() });

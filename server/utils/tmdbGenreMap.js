@@ -57,7 +57,7 @@ function mapTmdbGenreIds(genreIds, mediaType = 'movie') {
 }
 
 /**
- * Resolves a human-readable country and CinePulse regionTag from origin/language/genres.
+ * Resolves a human-readable country and CeniPluse regionTag from origin/language/genres.
  */
 function resolveRegionAndCountry(originCountry = '', lang = 'EN', genres = []) {
   const origin = String(originCountry || '').trim().toUpperCase();

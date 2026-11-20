@@ -35,7 +35,7 @@ export const SponsoredBanner: React.FC<SponsoredBannerProps> = ({
     ? config?.secondAdNetworkName || 'Partner Offer'
     : config?.adNetworkName || 'Sponsored';
   const titleText = isSecondary
-    ? config?.secondAdTitle || config?.bannerTitle || 'Go Ad-Free with CinePulse Premium'
+    ? config?.secondAdTitle || config?.bannerTitle || 'Go Ad-Free with CeniPluse Premium'
     : config?.bannerTitle || 'Unlock Unlimited HD Movies & Downloads';
   const subtitleText = isSecondary
     ? config?.secondAdSubtitle || config?.bannerSubtitle || ''

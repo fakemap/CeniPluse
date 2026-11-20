@@ -40,7 +40,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[CinePulse ErrorBoundary]', error, info.componentStack);
+    console.error('[CeniPluse ErrorBoundary]', error, info.componentStack);
     const msg = error?.message || '';
     if (ErrorBoundary.isChunkLoadError(msg)) {
       try {

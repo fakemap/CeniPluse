@@ -174,7 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="p-2.5 border-t border-white/[0.06]">
             <div className="rounded-xl bg-[#0B0D12]/90 border border-white/[0.07] p-2.5 space-y-2">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] px-1">
-                Get CinePulse
+                Get CeniPluse
               </div>
               <button
                 type="button"
@@ -186,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <Smartphone className="w-4 h-4 shrink-0 stroke-[2.4]" />
                 <div className="leading-tight min-w-0">
-                  <div className="text-xs font-extrabold truncate">CinePulse Mobile</div>
+                  <div className="text-xs font-extrabold truncate">CeniPluse Mobile</div>
                   <div className="text-[10px] font-semibold opacity-80 truncate">iOS &amp; Android Offline</div>
                 </div>
               </button>

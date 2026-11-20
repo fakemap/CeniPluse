@@ -1372,8 +1372,8 @@ router.post('/admin/titles', (req, res) => {
     backdrop: (b.backdrop || b.poster || '').trim() || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1400&q=80',
     previewVideoUrl: '',
     trailerYoutubeId: (b.trailerYoutubeId || '').trim(),
-    overview: (b.overview || '').trim() || 'Added via CinePulse Admin Studio.',
-    director: (b.director || 'CinePulse Studio').trim(),
+    overview: (b.overview || '').trim() || 'Added via CeniPluse Admin Studio.',
+    director: (b.director || 'CeniPluse Studio').trim(),
     cast: String(b.cast || '')
       .split(',')
       .map((x) => x.trim())

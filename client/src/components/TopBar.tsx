@@ -203,7 +203,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
           </div>
           <span className="text-[14.5px] md:text-[1.18rem] font-extrabold tracking-tight text-[#F8FAFC]">
-            Cine<span className="text-[#00E5FF]">Pulse</span>
+            Ceni<span className="text-[#00E5FF]">Pluse</span>
           </span>
         </button>
 

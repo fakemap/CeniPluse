@@ -1430,7 +1430,7 @@ async function streamHlsAsVideoDownload({
     customHeaders
   );
 
-  const safeFilename = (filename || 'cinepulse-video.mp4')
+  const safeFilename = (filename || 'cenipluse-video.mp4')
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .replace(/\.ts$/i, '.mp4');
 
@@ -1665,8 +1665,8 @@ router.get('/proxy', async (req, res) => {
             const safeName = requestedFilename
               ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
               : wantsSrt
-              ? 'cinepulse-subtitle.srt'
-              : 'cinepulse-subtitle.vtt';
+              ? 'cenipluse-subtitle.srt'
+              : 'cenipluse-subtitle.vtt';
             res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
           }
           return res.send(outText);
@@ -1678,7 +1678,7 @@ router.get('/proxy', async (req, res) => {
             manifestUrl: rawUrl,
             customHeaders: { Referer: referer, Origin: origin },
             requestedQuality: req.query.quality,
-            filename: requestedFilename || 'cinepulse-video.mp4',
+            filename: requestedFilename || 'cenipluse-video.mp4',
             req,
             res,
           });
@@ -1708,8 +1708,8 @@ router.get('/proxy', async (req, res) => {
         const safeName = requestedFilename
           ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
           : wantsSrt
-          ? 'cinepulse-subtitle.srt'
-          : 'cinepulse-subtitle.vtt';
+          ? 'cenipluse-subtitle.srt'
+          : 'cenipluse-subtitle.vtt';
         res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
       }
       return res.send(outText);
@@ -1721,7 +1721,7 @@ router.get('/proxy', async (req, res) => {
       const ext = isSubtitle ? '.vtt' : '.mp4';
       const safeName = requestedFilename
         ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
-        : `cinepulse-download${ext}`;
+        : `cenipluse-download${ext}`;
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     }
     if (upstream.headers['content-length']) {

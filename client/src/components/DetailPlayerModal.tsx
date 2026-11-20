@@ -1122,10 +1122,10 @@ export const DetailPlayerModal: React.FC<DetailPlayerModalProps> = ({
             </div>
           )}
 
-          {/* In-Platform "More Like This" Recommendations (keeps viewers inside CinePulse!) */}
+          {/* In-Platform "More Like This" Recommendations (keeps viewers inside CeniPluse!) */}
           {enriched.recommendations && enriched.recommendations.length > 0 && onSelectRecommendation && (
             <div className="space-y-2.5 pt-2">
-              <h3 className="text-sm font-extrabold text-[#F8FAFC]">More Like This on CinePulse</h3>
+              <h3 className="text-sm font-extrabold text-[#F8FAFC]">More Like This on CeniPluse</h3>
               <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
                 {enriched.recommendations.map((rec) => (
                   <button

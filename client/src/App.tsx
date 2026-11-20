@@ -326,7 +326,7 @@ export const App: React.FC = () => {
     if (['soft_paywall', 'strict_gate'].includes(mode) && !hasActiveSubscription) {
       setSelectedMedia({ item, autoPlay: false });
       openPaywallModal(
-        `Subscribe to CinePulse Premium (from GHS 25/mo via MoMo or Card) to stream "${item.title}" ad-free in HD.`
+        `Subscribe to CeniPluse Premium (from GHS 25/mo via MoMo or Card) to stream "${item.title}" ad-free in HD.`
       );
       return;
     }
@@ -468,20 +468,20 @@ export const App: React.FC = () => {
     }
 
     if (selectedMedia?.item) {
-      document.title = `${selectedMedia.item.title} (${selectedMedia.item.year}) — CinePulse`;
+      document.title = `${selectedMedia.item.title} (${selectedMedia.item.year}) — CeniPluse`;
     } else {
       const routeTitles: Record<NavRoute, string> = {
-        home: 'CinePulse — Stream Movies, Series & Live Cinema',
-        movies: 'Movies Spotlight — CinePulse',
-        series: 'Browse TV Series & Shows — CinePulse',
-        animation: 'Animation, Cartoons & Anime — CinePulse',
-        trending: 'Trending & Most Watched — CinePulse',
-        search: 'Search Catalog — CinePulse',
-        watchlist: 'My Watchlist — CinePulse',
-        downloads: 'Downloads — CinePulse',
-        admin: 'Admin Publishing Studio — CinePulse',
+        home: 'CeniPluse — Stream Movies, Series & Live Cinema',
+        movies: 'Movies Spotlight — CeniPluse',
+        series: 'Browse TV Series & Shows — CeniPluse',
+        animation: 'Animation, Cartoons & Anime — CeniPluse',
+        trending: 'Trending & Most Watched — CeniPluse',
+        search: 'Search Catalog — CeniPluse',
+        watchlist: 'My Watchlist — CeniPluse',
+        downloads: 'Downloads — CeniPluse',
+        admin: 'Admin Publishing Studio — CeniPluse',
       };
-      document.title = routeTitles[activeRoute] || 'CinePulse';
+      document.title = routeTitles[activeRoute] || 'CeniPluse';
     }
   }, [activeRoute, searchQuery, filters, selectedMedia, directoryHeading, directoryTypeFilter]);
 
@@ -970,7 +970,7 @@ export const App: React.FC = () => {
               onRemove={handleRemoveContinueWatching}
             />
 
-          {/* SIGNATURE TOP 10 ON CINEPULSE TODAY RANKED RAIL (Oversized Outlined Numerals 1–10) */}
+          {/* SIGNATURE TOP 10 ON CENIPLUSE TODAY RANKED RAIL (Oversized Outlined Numerals 1–10) */}
           <TopTenRail
             items={topTenItems}
             watchlistIds={watchlistIds}
@@ -1545,7 +1545,7 @@ export const App: React.FC = () => {
                 VIP
               </div>
               <h1 className="text-2xl font-black text-[#F8FAFC] tracking-tight">
-                CinePulse Members-Only Access
+                CeniPluse Members-Only Access
               </h1>
               <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
                 Subscribe from <strong className="text-[#FCE18E]">GHS 25/month</strong> via MTN MoMo,
@@ -1554,7 +1554,7 @@ export const App: React.FC = () => {
               <div className="flex flex-col gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => openPaywallModal('Choose a plan below to unlock full access to CinePulse.')}
+                  onClick={() => openPaywallModal('Choose a plan below to unlock full access to CeniPluse.')}
                   className="w-full min-h-[46px] rounded-xl bg-gradient-to-r from-[#FFF1BC] via-[#FCE18E] to-[#F5CD67] text-[#2B1907] text-sm font-extrabold"
                 >
                   Subscribe Now (MoMo / Card)

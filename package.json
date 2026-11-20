@@ -1,7 +1,7 @@
 {
-  "name": "cinebox-movie-platform",
+  "name": "cenipluse-platform",
   "version": "1.0.0",
-  "description": "CineBox - Full-stack MovieBox, NetNaija & Self-Hosted Media Streaming Platform",
+  "description": "CeniPluse - Full-stack Media Streaming Platform (https://www.cenipluse.xyz)",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

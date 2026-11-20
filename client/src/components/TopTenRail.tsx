@@ -14,7 +14,7 @@ interface TopTenRailProps {
 }
 
 export const TopTenRail: React.FC<TopTenRailProps> = ({
-  title = 'Top 10 on CinePulse Today',
+  title = 'Top 10 on CeniPluse Today',
   subtitle = 'Most streamed films & series across the platform',
   items,
   watchlistIds,

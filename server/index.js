@@ -78,7 +78,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'CinePulse',
+    service: 'CeniPluse',
     database: store.isCloudEnabled() ? 'supabase' : 'local-json',
     titlesCount: store.getCmsTitles().length,
     timestamp: new Date().toISOString(),

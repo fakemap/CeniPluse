@@ -111,7 +111,7 @@ router.get('/overview', (req, res) => {
 router.put('/settings', (req, res) => {
   const patch = {};
   if (typeof req.body.siteName === 'string') {
-    patch.siteName = sanitizeString(req.body.siteName, 60) || 'CinePulse';
+    patch.siteName = sanitizeString(req.body.siteName, 60) || 'CeniPluse';
   }
   if (typeof req.body.tagline === 'string') {
     patch.tagline = sanitizeString(req.body.tagline, 140);
