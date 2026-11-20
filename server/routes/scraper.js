@@ -6,7 +6,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { isSafeExternalUrl } = require('../middleware/security');
 
 let FFMPEG_PATH = null;
@@ -17,6 +17,14 @@ try {
   }
 } catch {
   FFMPEG_PATH = null;
+}
+if (!FFMPEG_PATH) {
+  try {
+    const check = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    if (check.status === 0) FFMPEG_PATH = 'ffmpeg';
+  } catch {
+    // ignore
+  }
 }
 
 const router = express.Router();
