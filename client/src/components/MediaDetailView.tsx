@@ -1805,36 +1805,45 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     </div>
 
                     {selectedEpisodeObj && (
-                      <div className="rounded-xl bg-[#141821] border border-white/[0.07] p-3.5 flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-extrabold text-[#F8FAFC]">
+                      <div className="rounded-xl bg-[#141821] border border-white/[0.07] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="text-sm sm:text-xs font-extrabold text-[#F8FAFC] leading-snug">
                             S{String(selectedEpisodeObj.seasonNumber).padStart(2, '0')}E
                             {String(selectedEpisodeObj.episodeNumber).padStart(2, '0')} &bull;{' '}
                             {selectedEpisodeObj.title}
                           </div>
-                          <p className="text-xs text-[#94A3B8] line-clamp-2 mt-0.5">
+                          <p className="text-xs text-[#94A3B8] line-clamp-3 sm:line-clamp-2 leading-relaxed">
                             {selectedEpisodeObj.overview || 'No episode description available.'}
                           </p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
                           {(Boolean(selectedEpisodeObj.sources?.length) || canEmbedVidLink) ? (
                             <>
                               <button
                                 type="button"
                                 onClick={() => handleSelectEpisode(selectedEpisodeObj)}
-                                className="min-h-[38px] px-4 rounded-md bg-[#10B981] hover:brightness-110 text-[#041811] text-xs font-extrabold inline-flex items-center gap-1.5"
+                                className="min-h-[44px] sm:min-h-[38px] px-3 sm:px-4 rounded-xl sm:rounded-md bg-[#10B981] hover:brightness-110 active:scale-[0.98] text-[#041811] text-xs font-extrabold inline-flex items-center justify-center gap-1.5 transition-all"
                               >
-                                <Play className="w-3.5 h-3.5 fill-current" />
-                                Watch Episode
+                                <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                                <span className="truncate">Watch Episode</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setDownloadModalOpen(true)}
-                                className="min-h-[38px] px-3.5 rounded-md bg-[#1E2430] hover:bg-[#273041] border border-white/10 text-[#F8FAFC] text-xs font-bold inline-flex items-center gap-1.5"
+                                onClick={() => {
+                                  if (
+                                    !ensureSubscribedFor(
+                                      `download ${enriched.title} S${selectedEpisodeObj.seasonNumber}E${selectedEpisodeObj.episodeNumber}`
+                                    )
+                                  ) {
+                                    return;
+                                  }
+                                  setDownloadModalOpen(true);
+                                }}
+                                className="min-h-[44px] sm:min-h-[38px] px-3 sm:px-3.5 rounded-xl sm:rounded-md bg-[#1E2430] hover:bg-[#273041] active:scale-[0.98] border border-white/10 text-[#F8FAFC] text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all"
                               >
-                                <Download className="w-3.5 h-3.5 text-[#00E5FF]" />
-                                Download Episode
+                                <Download className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                                <span className="truncate">Download</span>
                               </button>
                             </>
                           ) : (
@@ -1842,7 +1851,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                               type="button"
                               disabled={requesting}
                               onClick={handleRequestTitle}
-                              className={`min-h-[38px] px-3.5 rounded-md text-xs font-bold inline-flex items-center gap-1.5 ${
+                              className={`col-span-2 sm:col-span-1 min-h-[44px] sm:min-h-[38px] px-3.5 rounded-xl sm:rounded-md text-xs font-bold inline-flex items-center justify-center gap-1.5 ${
                                 hasRequested
                                   ? 'bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981]'
                                   : 'bg-[#1E2430] hover:bg-[#273041] border border-white/10 text-[#CBD5E1]'
