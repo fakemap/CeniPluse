@@ -1664,11 +1664,16 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         {q}
                       </span>
                     ))}
+                    {activeSources.length > 0 && (
+                      <span className="px-2.5 py-1 rounded bg-[#10B981]/15 border border-[#10B981]/45 font-extrabold text-[#10B981]">
+                        {activeSources.length} Ad-Free Server{activeSources.length > 1 ? 's' : ''} Ready
+                      </span>
+                    )}
                     {canEmbedVidLink && (
                       <span className="px-2.5 py-1 rounded bg-[#00E5FF]/15 border border-[#00E5FF]/40 font-extrabold text-[#00E5FF]">
                         {parsedMalId
                           ? `Anime Stream Ready (#${parsedMalId} • ${animeAudioType.toUpperCase()})`
-                          : 'Cloud Stream Ready'}
+                          : 'Cloud HD Backup Ready'}
                       </span>
                     )}
                     {loadingSeason && (
@@ -1907,6 +1912,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>{src.label || `Server ${idx + 1} (${src.quality || '1080p'})`}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#10B981]/20 text-[#10B981] text-[9px] font-black uppercase">
+                          Ad-Free
+                        </span>
                         <span className="text-[#94A3B8] font-normal">({src.size})</span>
                       </button>
                     ))}
