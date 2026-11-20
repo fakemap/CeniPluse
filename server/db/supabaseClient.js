@@ -4,6 +4,8 @@ const DEFAULT_TIMEOUT_MS = 10000;
 const PAGE_SIZE = 1000;
 const UPSERT_BATCH_SIZE = 80;
 const DELETE_BATCH_SIZE = 50;
+const AUTH_CACHE_TTL_MS = 30 * 1000;
+const verifiedUserCache = new Map();
 
 function getCredentials() {
   const url = String(process.env.SUPABASE_URL || config.SUPABASE_URL || '')
@@ -12,7 +14,76 @@ function getCredentials() {
   const serviceKey = String(
     process.env.SUPABASE_SERVICE_ROLE_KEY || config.SUPABASE_SERVICE_ROLE_KEY || ''
   ).trim();
-  return { url, serviceKey };
+  const anonKey = String(
+    process.env.SUPABASE_ANON_KEY || config.SUPABASE_ANON_KEY || ''
+  ).trim();
+  return { url, serviceKey, anonKey };
+}
+
+/**
+ * Verifies a Supabase Auth access_token (JWT) by calling Supabase Auth `/auth/v1/user`.
+ * Uses a 30s in-memory cache per token to avoid hitting Supabase on every admin poll.
+ */
+async function verifySupabaseUser(accessToken) {
+  const token = String(accessToken || '').trim();
+  if (!token || token.split('.').length !== 3) return null;
+
+  const cached = verifiedUserCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user;
+  }
+
+  const { url, serviceKey, anonKey } = getCredentials();
+  const apiKey = serviceKey || anonKey;
+  if (!url || !apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${url}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: apiKey,
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      verifiedUserCache.delete(token);
+      return null;
+    }
+    const user = await res.json();
+    if (!user || !user.id || !user.email) return null;
+
+    if (verifiedUserCache.size > 200) {
+      const now = Date.now();
+      for (const [k, v] of verifiedUserCache.entries()) {
+        if (v.expiresAt <= now) verifiedUserCache.delete(k);
+      }
+    }
+    verifiedUserCache.set(token, { user, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+    return user;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Checks whether a verified Supabase user has administrator privileges
+ * via `app_metadata.role === 'admin'` OR the `ADMIN_EMAILS` env var allowlist.
+ */
+function isSupabaseAdminUser(user) {
+  if (!user || !user.email) return false;
+  if (String(user.app_metadata?.role || '').toLowerCase() === 'admin') {
+    return true;
+  }
+  const allowlist = String(process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return allowlist.includes(String(user.email).trim().toLowerCase());
 }
 
 function isEnabled() {
@@ -123,6 +194,9 @@ async function deleteByIds(table, ids) {
 
 module.exports = {
   isEnabled,
+  getCredentials,
+  verifySupabaseUser,
+  isSupabaseAdminUser,
   fetchAllRows,
   upsertRows,
   deleteByIds,

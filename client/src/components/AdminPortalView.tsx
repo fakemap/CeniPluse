@@ -22,6 +22,7 @@ import {
   Send,
   Flame,
   RefreshCw,
+  LogOut,
 } from 'lucide-react';
 import type { CmsTitleItem, MediaItem } from '../types/media';
 import { backendApi } from '../services/api';
@@ -34,6 +35,7 @@ interface AdminPortalViewProps {
   initialTab?: AdminTab;
   userEmail?: string | null;
   onRequireAuth?: () => void;
+  onSignOut?: () => Promise<void> | void;
   onBackHome?: () => void;
 }
 
@@ -43,10 +45,11 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   initialTab = 'draft',
   userEmail = null,
   onRequireAuth,
+  onSignOut,
   onBackHome,
 }) => {
   const [tab, setTab] = useState<AdminTab>(initialTab);
-  const [authRequired, setAuthRequired] = useState(false);
+  const [authState, setAuthState] = useState<'ok' | 'signin' | 'forbidden'>('ok');
   const [summary, setSummary] = useState<{
     total: number;
     published: number;
@@ -175,7 +178,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         region: filterRegion,
         genre: filterGenre,
       });
-      setAuthRequired(false);
+      setAuthState('ok');
       setSummary(data.summary);
       setAvailableGenres(data.availableGenres || []);
       setAvailableRegions(data.availableRegions || []);
@@ -185,10 +188,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         if (refreshed) setManaging(refreshed);
       }
     } catch (err) {
-      if ((err as Error).message === 'AUTH_REQUIRED') {
-        setAuthRequired(true);
+      const msg = (err as Error).message;
+      if (msg === 'AUTH_REQUIRED') {
+        setAuthState('signin');
+      } else if (msg === 'ADMIN_FORBIDDEN') {
+        setAuthState('forbidden');
       } else {
-        notify((err as Error).message || 'Failed to load Admin CMS inventory.');
+        notify(msg || 'Failed to load Admin CMS inventory.');
       }
     } finally {
       setLoading(false);
@@ -242,11 +248,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     backendApi
       .fetchCmsAdminTitles('all')
       .then((d) => {
-        setAuthRequired(false);
+        setAuthState('ok');
         setSummary(d.summary);
       })
       .catch((err) => {
-        if ((err as Error).message === 'AUTH_REQUIRED') setAuthRequired(true);
+        const msg = (err as Error).message;
+        if (msg === 'AUTH_REQUIRED') setAuthState('signin');
+        else if (msg === 'ADMIN_FORBIDDEN') setAuthState('forbidden');
       });
     loadHarvestCategories().catch(() => {});
     loadRequests().catch(() => {});
@@ -255,7 +263,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       backendApi
         .fetchCmsAdminTitles('all')
         .then((d) => {
-          setAuthRequired(false);
+          setAuthState('ok');
           setSummary(d.summary);
         })
         .catch(() => {});
@@ -514,30 +522,54 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     (s) => s.seasonNumber === selectedSeasonNum
   );
 
-  if (authRequired) {
+  if (authState !== 'ok') {
+    const isForbidden = authState === 'forbidden';
     return (
       <div className="px-4 md:px-0 py-14 flex items-center justify-center">
-        <div className="w-full max-w-md rounded-2xl bg-[#141821] border border-white/[0.1] p-6 sm:p-8 text-center space-y-4">
-          <div className="w-12 h-12 mx-auto rounded-2xl bg-[#00E5FF]/15 border border-[#00E5FF]/35 flex items-center justify-center text-[#00E5FF]">
-            <ShieldCheck className="w-6 h-6" />
+        <div className="w-full max-w-md rounded-2xl bg-[#111622] border border-white/[0.1] p-6 sm:p-8 text-center space-y-4 shadow-2xl">
+          <div
+            className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center ${
+              isForbidden
+                ? 'bg-rose-500/15 border border-rose-500/35 text-rose-400'
+                : 'bg-[#00E5FF]/15 border border-[#00E5FF]/35 text-[#00E5FF]'
+            }`}
+          >
+            {isForbidden ? <AlertCircle className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
           </div>
           <div className="space-y-1.5">
             <h1 className="text-lg sm:text-xl font-extrabold text-[#F8FAFC]">
-              Admin Studio Sign-In Required
+              {isForbidden ? 'Administrator Access Required' : 'Admin Studio Sign-In Required'}
             </h1>
             <p className="text-xs text-[#94A3B8] leading-relaxed">
-              Sign in with your administrator email to manage drafts, attach cloud links, review viewer requests, and publish titles on Vercel.
+              {isForbidden
+                ? `Signed in as ${userEmail || 'a member account'}, which does not have administrator privileges. Sign out and log in with your admin account.`
+                : 'Sign in with your administrator email and password to manage drafts, attach stream links, review viewer requests, and publish titles.'}
             </p>
           </div>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
-            {onRequireAuth && (
+            {isForbidden && onSignOut ? (
               <button
                 type="button"
-                onClick={onRequireAuth}
-                className="min-h-[42px] px-5 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold transition-colors"
+                onClick={async () => {
+                  await onSignOut();
+                  setAuthState('signin');
+                  if (onRequireAuth) onRequireAuth();
+                }}
+                className="min-h-[42px] px-5 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
               >
-                Sign In to Continue
+                <LogOut className="w-3.5 h-3.5" />
+                Switch to Admin Account
               </button>
+            ) : (
+              onRequireAuth && (
+                <button
+                  type="button"
+                  onClick={onRequireAuth}
+                  className="min-h-[42px] px-5 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold transition-colors"
+                >
+                  Sign In to Continue
+                </button>
+              )
             )}
             <button
               type="button"
@@ -569,7 +601,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={harvestingCat !== null}
@@ -581,6 +613,21 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               ? 'Fetching All Categories from TMDB...'
               : 'Fetch All Kinds of Movies & Series (TMDB)'}
           </button>
+
+          {userEmail && onSignOut && (
+            <button
+              type="button"
+              onClick={async () => {
+                await onSignOut();
+                setAuthState('signin');
+              }}
+              title={`Signed in as ${userEmail}`}
+              className="min-h-[42px] px-3.5 rounded-full bg-[#1E2430] hover:bg-rose-500/20 hover:text-rose-300 border border-white/10 text-xs font-bold text-[#CBD5E1] inline-flex items-center gap-1.5 transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </button>
+          )}
         </div>
       </div>
 

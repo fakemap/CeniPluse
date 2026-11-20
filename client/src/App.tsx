@@ -13,6 +13,13 @@ import type {
 } from './types/media';
 import { CATEGORY_CARDS, INITIAL_CATALOG } from './data/catalog';
 import { backendApi } from './services/api';
+import {
+  supabase,
+  extractAuthProfile,
+  syncSessionToken,
+  signOutSupabase,
+  type AuthUserProfile,
+} from './services/supabase';
 import { hasVidLinkSupport } from './utils/vidlink';
 import { AppShell } from './components/AppShell';
 import { HeroCarousel } from './components/HeroCarousel';
@@ -186,12 +193,42 @@ export const App: React.FC = () => {
     autoPlay: boolean;
   } | null>(null);
   const [activeModal, setActiveModal] = useState<'pro' | 'app' | 'signin' | null>(null);
+  const [userProfile, setUserProfile] = useState<AuthUserProfile | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(() =>
     localStorage.getItem('cinepulse_user')
   );
   const [premiumPlan, setPremiumPlan] = useState<string | null>(() =>
     localStorage.getItem('cinepulse_premium_plan')
   );
+
+  // Sync live Supabase Auth session (Email/Password + Google OAuth + Auto Token Refresh)
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      const session = data.session;
+      syncSessionToken(session);
+      const profile = extractAuthProfile(session?.user);
+      setUserProfile(profile);
+      setUserEmail(profile?.email || null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      syncSessionToken(session);
+      const profile = extractAuthProfile(session?.user);
+      setUserProfile(profile);
+      setUserEmail(profile?.email || null);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const [watchProgressMap, setWatchProgressMap] = useState<Record<string, WatchProgressEntry>>(() => {
     try {
@@ -933,6 +970,11 @@ export const App: React.FC = () => {
             <AdminPortalView
               userEmail={userEmail}
               onRequireAuth={() => setActiveModal('signin')}
+              onSignOut={async () => {
+                await signOutSupabase().catch(() => {});
+                setUserProfile(null);
+                setUserEmail(null);
+              }}
               onBackHome={() => handleNavigate('home')}
               onCatalogChanged={() => {
                 reloadPublicCatalog();
@@ -1198,27 +1240,17 @@ export const App: React.FC = () => {
         modal={activeModal}
         onClose={() => setActiveModal(null)}
         userEmail={userEmail}
+        userProfile={userProfile}
         premiumPlan={premiumPlan}
         onSelectPlan={(planId) => {
           localStorage.setItem('cinepulse_premium_plan', planId);
           setPremiumPlan(planId);
         }}
         onSwitchModal={(next) => setActiveModal(next)}
-        onSignIn={async (email) => {
-          localStorage.setItem('cinepulse_user', email);
-          try {
-            const session = await backendApi.loginSession(email);
-            if (session?.token) {
-              localStorage.setItem('cinepulse_token', session.token);
-            }
-          } catch {
-            // Keep local session active if offline
-          }
-          setUserEmail(email);
-        }}
-        onSignOut={() => {
-          localStorage.removeItem('cinepulse_user');
-          localStorage.removeItem('cinepulse_token');
+        onOpenAdmin={() => handleNavigate('admin')}
+        onSignOut={async () => {
+          await signOutSupabase().catch(() => {});
+          setUserProfile(null);
           setUserEmail(null);
         }}
       />

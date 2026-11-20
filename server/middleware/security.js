@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const path = require('path');
+const { verifySupabaseUser, isSupabaseAdminUser } = require('../db/supabaseClient');
 
 // Ephemeral + env-backed HMAC signing secret (never exposed to client)
 const SESSION_SECRET =
@@ -59,7 +60,7 @@ function securityHeaders(req, res, next) {
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' https: http: data: blob:",
       "media-src 'self' https: http: blob:",
-      "connect-src 'self' https: http:",
+      "connect-src 'self' https: http: wss:",
       "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://vidlink.pro https://*.vidlink.pro",
       "worker-src 'self' blob:",
     ].join('; ')
@@ -170,45 +171,45 @@ function maskSecret(secret) {
 }
 
 /**
- * RBAC Admin verification middleware:
- * Allows valid signed admin Bearer/header tokens OR local loopback/LAN admin sessions.
- * Blocks unauthorized remote requests with an invalid token.
+ * RBAC Admin verification middleware (Supabase Auth JWT):
+ * Requires a valid Supabase Auth Bearer token belonging to a user with
+ * `app_metadata.role === 'admin'` (or listed in `ADMIN_EMAILS`).
  */
-function requireAdminAuth(req, res, next) {
+async function requireAdminAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token =
     (authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '') ||
-    req.headers['x-cinepulse-token'] ||
-    '';
+    String(req.headers['x-cinepulse-token'] || '').trim();
 
-  if (token) {
-    const claims = verifySessionToken(String(token));
-    if (!claims || claims.role !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden: Invalid or expired admin session token.' });
+  if (!token) {
+    return res.status(401).json({
+      error: 'Authentication required for admin operations.',
+      code: 'AUTH_REQUIRED',
+    });
+  }
+
+  // 1. Primary path: verify real Supabase Auth JWT
+  const sbUser = await verifySupabaseUser(token);
+  if (sbUser) {
+    if (!isSupabaseAdminUser(sbUser)) {
+      return res.status(403).json({
+        error: 'Access denied. Your account does not have administrator privileges.',
+        code: 'ADMIN_FORBIDDEN',
+      });
     }
-    req.adminUser = claims;
+    req.adminUser = {
+      id: sbUser.id,
+      email: sbUser.email,
+      role: 'admin',
+      provider: 'supabase',
+    };
     return next();
   }
 
-  // Permit local workstation / same-host requests when no token is explicitly invalidated
-  const ip = String(req.ip || req.socket?.remoteAddress || '');
-  const isLocalOrLan =
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip === '::ffff:127.0.0.1' ||
-    ip.startsWith('192.168.') ||
-    ip.startsWith('10.') ||
-    ip.startsWith('172.') ||
-    ip.includes('::ffff:172.') ||
-    ip.includes('::ffff:192.168.') ||
-    ip.includes('::ffff:10.');
-
-  if (isLocalOrLan) {
-    req.adminUser = { email: 'admin@cinepulse.local', role: 'admin' };
-    return next();
-  }
-
-  return res.status(401).json({ error: 'Authentication required for admin operations.' });
+  return res.status(401).json({
+    error: 'Invalid or expired session. Please sign in with your administrator account.',
+    code: 'AUTH_REQUIRED',
+  });
 }
 
 function isAllowedVideoFile(filename) {

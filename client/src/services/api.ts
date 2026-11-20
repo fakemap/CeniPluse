@@ -137,19 +137,25 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
 function getAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token =
     typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') || '' : '';
-  return token ? { ...extra, 'x-cinepulse-token': token } : extra;
+  return token
+    ? { ...extra, Authorization: `Bearer ${token}`, 'x-cinepulse-token': token }
+    : extra;
 }
 
 export const backendApi = {
-  async loginSession(email: string): Promise<{ email: string; role: string; token: string }> {
-    const res = await fetch('/api/user/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+  async fetchAuthSession(): Promise<{
+    authenticated: boolean;
+    id?: string;
+    email?: string;
+    role?: 'admin' | 'user';
+    fullName?: string;
+    avatarUrl?: string;
+  }> {
+    const res = await fetch('/api/user/auth/session', {
+      headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Sign-in failed');
-    return data;
+    if (!res.ok) return { authenticated: false };
+    return res.json();
   },
 
   async syncWatchlistToggle(movieId: string): Promise<{ added: boolean; watchlist: string[] }> {
@@ -423,8 +429,11 @@ export const backendApi = {
     const res = await fetch(`/api/cms/admin/titles?${qs.toString()}`, {
       headers: getAuthHeaders(),
     });
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       throw new Error('AUTH_REQUIRED');
+    }
+    if (res.status === 403) {
+      throw new Error('ADMIN_FORBIDDEN');
     }
     if (!res.ok) throw new Error('Failed to load Admin CMS inventory');
     return res.json();

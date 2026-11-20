@@ -1,34 +1,33 @@
 const express = require('express');
 const store = require('../db/store');
-const {
-  signSessionToken,
-  verifySessionToken,
-  sanitizeString,
-} = require('../middleware/security');
+const { verifySupabaseUser, isSupabaseAdminUser } = require('../db/supabaseClient');
 
 const router = express.Router();
 
-// POST /api/user/auth/login - Issues an HMAC-SHA256 signed session token
-router.post('/auth/login', (req, res) => {
-  const email = sanitizeString(req.body?.email, 120).toLowerCase();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: 'Please enter a valid email address.' });
-  }
-  const role = 'admin';
-  const token = signSessionToken({ email, role });
-  res.json({ email, role, token });
-});
-
-// GET /api/user/auth/session - Validates an existing session token
-router.get('/auth/session', (req, res) => {
+// GET /api/user/auth/session - Validates an existing Supabase Auth JWT
+router.get('/auth/session', async (req, res) => {
   const authHeader = req.headers.authorization || '';
   const token =
     (authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '') ||
-    req.headers['x-cinepulse-token'] ||
-    '';
-  const claims = verifySessionToken(String(token));
-  if (!claims) return res.status(401).json({ authenticated: false });
-  res.json({ authenticated: true, email: claims.email, role: claims.role });
+    String(req.headers['x-cinepulse-token'] || '').trim();
+
+  if (!token) return res.status(401).json({ authenticated: false });
+
+  const sbUser = await verifySupabaseUser(token);
+  if (!sbUser) return res.status(401).json({ authenticated: false });
+
+  const isAdmin = isSupabaseAdminUser(sbUser);
+  res.json({
+    authenticated: true,
+    id: sbUser.id,
+    email: sbUser.email,
+    role: isAdmin ? 'admin' : 'user',
+    fullName:
+      sbUser.user_metadata?.full_name ||
+      sbUser.user_metadata?.name ||
+      sbUser.email.split('@')[0],
+    avatarUrl: sbUser.user_metadata?.avatar_url || sbUser.user_metadata?.picture || '',
+  });
 });
 
 // GET /api/user/state - Watchlist + Continue Watching + public settings
