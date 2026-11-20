@@ -285,11 +285,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         setSelectedSeasonNum(det.seasons[0].seasonNumber);
       }
 
-      if (autoPlayVideo && mergedSources.length > 0) {
+      if (autoPlayVideo && (mergedSources.length > 0 || canAutoEmbed)) {
+        // Always enter native ad-free stream mode first; auto-falls back to backup cloud only if 0 native servers resolve
         setMode('stream');
-        setMuted(false);
-      } else if (autoPlayVideo && canAutoEmbed) {
-        setMode('embed');
         setMuted(false);
       } else {
         setMode('poster');
@@ -382,7 +380,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         setResolvingStreams(false);
 
         if (res.subtitles && res.subtitles.length > 0) {
-          setScrapedSubtitles(res.subtitles);
+          const sortedSubs = [...res.subtitles].sort((a, b) => {
+            const aEn = /^en|english/i.test(`${a.lang || ''} ${a.label || ''}`) ? 0 : 1;
+            const bEn = /^en|english/i.test(`${b.lang || ''} ${b.label || ''}`) ? 0 : 1;
+            return aEn - bEn;
+          });
+          setScrapedSubtitles(sortedSubs);
         }
         if (res.seasonPacks && res.seasonPacks.length > 0) {
           setMycimaSeasonDownloads(res.seasonPacks);
@@ -407,17 +410,28 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             return merged;
           });
 
-          // Auto-switch from iframe embed to ad-free native HTML5/HLS.js player unless user explicitly pinned the VidLink iframe or MAL ID
+          // Auto-switch from iframe embed to 100% ad-free native player unless user explicitly pinned backup cloud
           setMode((currentMode) => {
             if (currentMode === 'embed' && !userPinnedEmbedRef.current && !malIdOverride.trim()) {
               return 'stream';
             }
             return currentMode;
           });
+        } else {
+          // Only fall back to backup cloud embed if zero ad-free native sources resolved
+          setMode((currentMode) => {
+            if (currentMode === 'stream' && canEmbedVidLink) {
+              return 'embed';
+            }
+            return currentMode;
+          });
         }
       })
       .catch(() => {
-        if (mounted) setResolvingStreams(false);
+        if (mounted) {
+          setResolvingStreams(false);
+          setMode((currentMode) => (currentMode === 'stream' && canEmbedVidLink ? 'embed' : currentMode));
+        }
       });
 
     return () => {
@@ -703,7 +717,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   };
 
   const handleWatchPrimary = () => {
-    if (activeSources.length > 0) {
+    if (activeSources.length > 0 || resolvingStreams) {
+      userPinnedEmbedRef.current = false;
       setMuted(false);
       setMode('stream');
     } else if (canEmbedVidLink) {
@@ -725,6 +740,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       ep.episodeNumber
     ).padStart(2, '0')} — ${ep.title}`;
     setActiveEpisodeLabel(label);
+    userPinnedEmbedRef.current = false;
 
     if (ep.sources && ep.sources.length > 0) {
       setActiveSources(ep.sources);
@@ -734,7 +750,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     } else if (canEmbedVidLink) {
       setActiveSources([]);
       setMuted(false);
-      setMode('embed');
+      // Enter native stream mode first so ad-free servers load before falling back to backup cloud
+      setMode('stream');
     }
   };
 
@@ -1093,7 +1110,19 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         <section className="relative w-full overflow-hidden rounded-none md:rounded-2xl bg-[#0D1017] border-y md:border border-white/[0.08]">
           {/* 100% Full-Width Interactive Theater Player Stage */}
           <div className="relative w-full aspect-video max-h-[78vh] bg-black">
-            {mode === 'stream' && currentSource ? (
+            {mode === 'stream' && !currentSource && resolvingStreams ? (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[#070A10] text-center p-6">
+                <div className="w-10 h-10 rounded-full border-2 border-[#00E5FF]/30 border-t-[#00E5FF] animate-spin" />
+                <div className="space-y-1">
+                  <p className="text-sm font-extrabold text-[#F8FAFC]">
+                    Connecting to Ad-Free Server...
+                  </p>
+                  <p className="text-xs text-[#94A3B8]">
+                    Preparing native HD stream with zero popups
+                  </p>
+                </div>
+              </div>
+            ) : mode === 'stream' && currentSource ? (
               <>
                 <video
                   ref={videoRef}
@@ -1304,6 +1333,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     >
                       <Play className="w-3 h-3 fill-current" />
                       {src.label || `Server ${idx + 1} (${src.quality || '1080p'})`}
+                      <span className="px-1.5 py-0.5 rounded bg-[#10B981]/20 text-[#10B981] text-[9px] font-black uppercase">
+                        Ad-Free
+                      </span>
                     </button>
                   ))}
 
