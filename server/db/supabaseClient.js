@@ -218,6 +218,19 @@ async function queryRows(table, queryString = '') {
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * Deletes rows matching a PostgREST filter query (e.g., "created_at=lt.2026-01-01T00:00:00Z").
+ */
+async function deleteWhere(table, filterQuery) {
+  if (!filterQuery) return;
+  await supabaseFetch(`${table}?${filterQuery}`, {
+    method: 'DELETE',
+    headers: {
+      Prefer: 'return=minimal',
+    },
+  });
+}
+
 module.exports = {
   isEnabled,
   getCredentials,
@@ -226,6 +239,7 @@ module.exports = {
   fetchAllRows,
   upsertRows,
   deleteByIds,
+  deleteWhere,
   insertRows,
   queryRows,
 };

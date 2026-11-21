@@ -47,22 +47,45 @@ function decryptProxyPayload(token) {
   }
 }
 
-const STREAM_PROXY_ORIGIN = String(
-  process.env.STREAM_PROXY_ORIGIN ||
+// Multi-node stream/download proxy pool: supports comma-separated STREAM_PROXY_ORIGINS or single STREAM_PROXY_ORIGIN
+const STREAM_PROXY_POOL = String(
+  process.env.STREAM_PROXY_ORIGINS ||
+    process.env.STREAM_PROXY_ORIGIN ||
     (process.env.VERCEL ? 'https://fjiklhy643.apps.bot-hosting.cloud' : '')
 )
-  .trim()
-  .replace(/\/+$/, '');
+  .split(',')
+  .map((s) => s.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+function pickProxyOrigin(targetUrl) {
+  if (STREAM_PROXY_POOL.length === 0) return '';
+  if (STREAM_PROXY_POOL.length === 1) return STREAM_PROXY_POOL[0];
+  let hash = 0;
+  for (let i = 0; i < targetUrl.length; i++) {
+    hash = ((hash << 5) - hash + targetUrl.charCodeAt(i)) | 0;
+  }
+  return STREAM_PROXY_POOL[Math.abs(hash) % STREAM_PROXY_POOL.length];
+}
+
+// Per-IP concurrent MP4 download guard (prevents one user from hogging proxy bandwidth)
+const MAX_DOWNLOADS_PER_IP = Math.max(1, Number(process.env.MAX_DOWNLOADS_PER_IP) || 2);
+const activeDownloadsByIp = new Map();
+
+function getClientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.ip || req.socket?.remoteAddress || 'unknown';
+}
 
 function buildProxyUrl(targetUrl, referer = '', origin = '') {
   if (!targetUrl || typeof targetUrl !== 'string') return '';
   // When running on Vercel serverless (whose AWS IPs get 426 Forbidden from hakunaymatata CDN),
-  // route media/subtitle proxying through the Bot-Hosting residential/non-AWS proxy!
-  if (STREAM_PROXY_ORIGIN && !targetUrl.startsWith('/')) {
+  // route media/subtitle proxying across the configured Bot-Hosting / VPS proxy pool!
+  const chosenOrigin = pickProxyOrigin(targetUrl);
+  if (chosenOrigin && !targetUrl.startsWith('/')) {
     const qs = new URLSearchParams({ url: targetUrl });
     if (referer) qs.set('referer', referer);
     if (origin) qs.set('origin', origin);
-    return `${STREAM_PROXY_ORIGIN}/api/scraper/proxy?${qs.toString()}`;
+    return `${chosenOrigin}/api/scraper/proxy?${qs.toString()}`;
   }
   const token = encryptProxyPayload({
     u: targetUrl,
@@ -1525,6 +1548,11 @@ router.get('/resolve', async (req, res) => {
       payload,
       expiresAt: Date.now() + RESOLVE_CACHE_TTL_MS,
     });
+    if (req.query.diag !== '1') {
+      res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=900');
+    }
+  } else {
+    res.setHeader('Cache-Control', 'no-store');
   }
 
   return res.json(payload);
@@ -2473,9 +2501,23 @@ router.get('/proxy', async (req, res) => {
     rawUrl.includes('subs5.strem.io') ||
     rawUrl.includes('sub.vdrk.site');
 
-  // For direct MP4/video downloads, use the resilient 8 MB chunked-range download engine
-  // so video CDNs never stall/drop at ~140 MB and native browser Pause/Resume works seamlessly
+  // For direct MP4/video downloads, enforce per-IP concurrency limit and use the resilient
+  // 8 MB chunked-range download engine so video CDNs never stall/drop at ~140 MB
   if (isDownload && !looksLikeM3u8 && !looksLikeSub) {
+    const clientIp = getClientIp(req);
+    const currentCount = activeDownloadsByIp.get(clientIp) || 0;
+    if (currentCount >= MAX_DOWNLOADS_PER_IP) {
+      return res.status(429).json({
+        error: `You already have ${MAX_DOWNLOADS_PER_IP} active downloads in progress. Please wait for one to finish before starting another.`,
+      });
+    }
+    activeDownloadsByIp.set(clientIp, currentCount + 1);
+    const releaseDownloadSlot = () => {
+      const n = (activeDownloadsByIp.get(clientIp) || 1) - 1;
+      if (n <= 0) activeDownloadsByIp.delete(clientIp);
+      else activeDownloadsByIp.set(clientIp, n);
+    };
+
     const safeName = requestedFilename
       ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
       : 'cenipluse-download.mp4';
@@ -2494,6 +2536,8 @@ router.get('/proxy', async (req, res) => {
         if (!res.writableEnded) res.destroy();
         return;
       }
+    } finally {
+      releaseDownloadSlot();
     }
   }
 

@@ -63,6 +63,7 @@ router.get('/', (req, res) => {
     new Set(store.getMovies().flatMap((m) => m.genres || []))
   ).sort();
 
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
   res.json({
     total: items.length,
     genres: allGenres,

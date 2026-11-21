@@ -66,6 +66,22 @@ const localEventsFallback = [];
 const localRevenueFallback = [];
 const localSubscriptionsFallback = new Map();
 const MAX_LOCAL_EVENTS = 2500;
+const ANALYTICS_RETENTION_DAYS = 60;
+const PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000; // Run at most once every 6 hours
+let lastPruneAt = 0;
+
+function maybePruneOldAnalyticsEvents() {
+  if (!supabaseClient.isEnabled()) return;
+  const now = Date.now();
+  if (now - lastPruneAt < PRUNE_INTERVAL_MS) return;
+  lastPruneAt = now;
+  const cutoffIso = new Date(now - ANALYTICS_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  supabaseClient
+    .deleteWhere('analytics_events', `created_at=lt.${encodeURIComponent(cutoffIso)}`)
+    .catch((err) => {
+      console.warn('[Analytics] Auto-prune warning:', err.message);
+    });
+}
 
 function computeExpiryIso(planId) {
   const days = PLAN_PRICING_GHS[planId]?.days || 30;
@@ -135,6 +151,7 @@ router.post('/event', async (req, res) => {
     supabaseClient.insertRows('analytics_events', row).catch((err) => {
       console.warn('[Analytics] Supabase event insert warning:', err.message);
     });
+    maybePruneOldAnalyticsEvents();
   }
 
   return res.status(202).json({ ok: true });
@@ -346,6 +363,7 @@ router.get('/subscription-status', async (req, res) => {
 // 3. PUBLIC MONETIZATION CONFIG: GET /api/analytics/monetization-config
 // ============================================================================
 router.get('/monetization-config', (req, res) => {
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
   const cfg = getMonetizationConfig();
   const publicPaystackKey = String(
     cfg.paystackPublicKey || process.env.PAYSTACK_PUBLIC_KEY || ''
