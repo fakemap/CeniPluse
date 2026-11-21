@@ -138,6 +138,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const [activeEpisodeLabel, setActiveEpisodeLabel] = useState<string>('');
   const [streamError, setStreamError] = useState<string>('');
   const [isBufferingLong, setIsBufferingLong] = useState(false);
+  const [hlsAudioTracks, setHlsAudioTracks] = useState<Array<{ id: number; name: string; lang: string }>>([]);
+  const [activeHlsAudioIdx, setActiveHlsAudioIdx] = useState<number>(-1);
 
   const [seasons, setSeasons] = useState<SeasonSummary[]>(item.seasons || []);
   const [selectedSeasonNum, setSelectedSeasonNum] = useState<number>(
@@ -196,6 +198,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const heroSectionRef = useRef<HTMLElement>(null);
   const lastProgressSentRef = useRef<number>(0);
   const episodesSectionRef = useRef<HTMLDivElement>(null);
@@ -476,14 +479,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 !s.id.startsWith('vidnest_') &&
                 !s.id.startsWith('cinesu_')
             );
-            // Deduplicate by resolution, preferring fast HLS over slow MP4 for the same resolution
+            // Deduplicate by resolution, preferring MP4 (Original English Audio) over HLS for the same resolution
             const seenQuals = new Set<string>();
             const dedupedFast: MediaSource[] = [];
             const sortedForStream = [...res.sources].sort((a, b) => {
-              if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
               const pa = Number(String(a.quality || '').replace(/\D/g, '')) || 720;
               const pb = Number(String(b.quality || '').replace(/\D/g, '')) || 720;
-              return pb - pa;
+              if (pb !== pa) return pb - pa;
+              if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
+              return 0;
             });
             for (const s of sortedForStream) {
               const qKey = String(s.quality || '1080p').toLowerCase();
@@ -601,6 +605,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   // Attach HLS.js / MP4 video player with mirror failover, progress sync & buffer cleanup
   useEffect(() => {
+    setHlsAudioTracks([]);
+    setActiveHlsAudioIdx(-1);
+    hlsRef.current = null;
     if (mode !== 'stream' || !currentSource || !videoRef.current) return;
     const video = videoRef.current;
     video.muted = muted;
@@ -679,9 +686,55 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
     if (isHls && Hls.isSupported()) {
       hls = new Hls({ enableWorker: true });
+      hlsRef.current = hls;
+
+      const syncHlsAudioTracks = (hlsInstance: Hls): boolean => {
+        const tracks = hlsInstance.audioTracks || [];
+        const isItalianOriginal = /italy|italian/i.test(String(enriched.country || ''));
+        if (tracks.length > 0) {
+          setHlsAudioTracks(
+            tracks.map((t, idx) => ({
+              id: idx,
+              name: t.name || t.lang || `Audio ${idx + 1}`,
+              lang: t.lang || '',
+            }))
+          );
+          const engIdx = tracks.findIndex((t) =>
+            /en|eng|english|orig/i.test(`${t.lang || ''} ${t.name || ''}`)
+          );
+          if (engIdx >= 0) {
+            if (hlsInstance.audioTrack !== engIdx) {
+              hlsInstance.audioTrack = engIdx;
+            }
+            setActiveHlsAudioIdx(engIdx);
+            return true;
+          }
+          if (!isItalianOriginal) {
+            // Multi-audio HLS without an English/Original track on a non-Italian title: skip dub
+            hlsInstance.destroy();
+            if (hlsRef.current === hlsInstance) hlsRef.current = null;
+            handleFatalStreamFailure();
+            return false;
+          }
+          setActiveHlsAudioIdx(hlsInstance.audioTrack >= 0 ? hlsInstance.audioTrack : 0);
+          return true;
+        } else if (!isItalianOriginal && /vixsrc|vixcloud/i.test(`${currentSource.id} ${currentSource.url}`)) {
+          // Single-track baked-in VixSrc HLS has Italian dubbed audio only: skip to Original English server
+          hlsInstance.destroy();
+          if (hlsRef.current === hlsInstance) hlsRef.current = null;
+          handleFatalStreamFailure();
+          return false;
+        }
+        return true;
+      };
+
       hls.loadSource(currentSource.url);
       hls.attachMedia(video);
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+        if (hls) syncHlsAudioTracks(hls);
+      });
       hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
+        if (hls && !syncHlsAudioTracks(hls)) return;
         if (hls && currentSource.quality && data.levels && data.levels.length > 1) {
           const targetH = Number(String(currentSource.quality).replace(/\D/g, '')) || 0;
           if (targetH > 0) {
@@ -711,6 +764,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           } else {
             if (hls) {
               hls.destroy();
+              if (hlsRef.current === hls) hlsRef.current = null;
               hls = null;
             }
             handleFatalStreamFailure();
@@ -733,6 +787,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       video.onloadedmetadata = null;
       if (hls) {
         hls.destroy();
+        if (hlsRef.current === hls) hlsRef.current = null;
         hls = null;
       }
       video.pause();
@@ -1768,8 +1823,44 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   ))}
                 </div>
 
-                {/* Anime Sub/Dub + Anime ID Switcher & External VTT Subtitles */}
+                {/* Audio Language Switcher + Anime Sub/Dub + External VTT Subtitles */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {mode === 'stream' && (
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-[#141821] border border-white/10 px-2.5 py-1 min-h-[34px]">
+                      <Volume2 className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                      <span className="text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider">
+                        Audio:
+                      </span>
+                      {hlsAudioTracks.length > 1 ? (
+                        <div className="inline-flex items-center gap-1">
+                          {hlsAudioTracks.map((track) => (
+                            <button
+                              key={track.id}
+                              type="button"
+                              onClick={() => {
+                                if (hlsRef.current) {
+                                  hlsRef.current.audioTrack = track.id;
+                                  setActiveHlsAudioIdx(track.id);
+                                }
+                              }}
+                              className={`px-2 py-0.5 rounded text-[11px] font-extrabold uppercase transition-colors ${
+                                activeHlsAudioIdx === track.id
+                                  ? 'bg-[#00E5FF] text-[#071018]'
+                                  : 'text-[#CBD5E1] hover:text-[#F8FAFC]'
+                              }`}
+                            >
+                              {track.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-[#10B981]/15 text-[#10B981] text-[11px] font-extrabold uppercase">
+                          {hlsAudioTracks[0]?.name || 'Original (English)'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {isAnime && (
                     <>
                       <div className="inline-flex items-center rounded-lg bg-[#141821] border border-white/10 p-0.5">

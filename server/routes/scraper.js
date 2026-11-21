@@ -555,7 +555,13 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
             }
           }
         }
-        if (parsedVariants.length > 0) {
+        const hasEnglishTrack = /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*(?:LANGUAGE="en|NAME="English)/i.test(
+          mText
+        );
+        if (!hasEnglishTrack) {
+          // VixSrc is an Italian host: if no English audio track exists in the manifest, the video has baked-in Italian dubbing only
+          sources.length = 0;
+        } else if (parsedVariants.length > 0) {
           sources.length = 0;
           sources.push(...parsedVariants);
         }
@@ -885,7 +891,7 @@ router.get('/resolve', async (req, res) => {
     }
   });
 
-  // Sort by resolution descending (1080p first), preferring HLS when two mirrors share the same resolution
+  // Sort by resolution descending (1080p first), preferring Original-Audio MP4 over VixSrc HLS when resolutions tie
   const parseResScore = (q) => {
     const s = String(q || '').toLowerCase();
     if (s.includes('4k') || s.includes('2160')) return 2160;
@@ -895,7 +901,7 @@ router.get('/resolve', async (req, res) => {
   rawSources.sort((a, b) => {
     const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
     if (resDiff !== 0) return resDiff;
-    if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
+    if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
     return 0;
   });
 
@@ -1061,6 +1067,31 @@ function rewriteM3u8Manifest(body, manifestUrl, referer, origin, onlyQuality = '
   const hasEnglishAudio = /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*(?:LANGUAGE="en|NAME="English)/i.test(
     workingBody
   );
+
+  // Move English audio track lines BEFORE Italian/other dubbed audio lines so players always pick English as Track 0
+  if (hasEnglishAudio) {
+    const rawLines = workingBody.split('\n');
+    const engAudioLines = [];
+    const otherAudioLines = [];
+    const firstAudioIdx = rawLines.findIndex((l) => l.trim().startsWith('#EXT-X-MEDIA:TYPE=AUDIO'));
+    if (firstAudioIdx !== -1) {
+      const nonAudioLines = [];
+      for (const l of rawLines) {
+        if (l.trim().startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+          if (/LANGUAGE="en|NAME="English/i.test(l)) {
+            engAudioLines.push(l);
+          } else {
+            otherAudioLines.push(l);
+          }
+        } else {
+          nonAudioLines.push(l);
+        }
+      }
+      const insertAt = Math.min(firstAudioIdx, nonAudioLines.length);
+      nonAudioLines.splice(insertAt, 0, ...engAudioLines, ...otherAudioLines);
+      workingBody = nonAudioLines.join('\n');
+    }
+  }
 
   return workingBody
     .split('\n')

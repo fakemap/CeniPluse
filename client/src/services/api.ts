@@ -458,11 +458,11 @@ export const backendApi = {
             downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
           }))
         : [];
-      // Order by resolution descending (1080p first), preferring low-latency HLS when resolutions tie
+      // Order by resolution descending (1080p first), preferring Original-Audio MP4 over VixSrc HLS when resolutions tie
       rawSources.sort((a, b) => {
         const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
         if (resDiff !== 0) return resDiff;
-        if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
+        if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
         return 0;
       });
       const sortedSources = rawSources.map((s, idx) => ({

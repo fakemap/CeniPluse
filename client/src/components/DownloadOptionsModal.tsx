@@ -270,12 +270,12 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       ];
     }
 
-    // Deduplicate by resolution, keeping the fastest source (HLS remux first, then direct MP4)
+    // Deduplicate by resolution, preferring Original-Audio MP4 over VixSrc HLS for the same resolution
     const byRes = new Map<number, MediaSource>();
     for (const src of downloadableSources) {
       const h = parseHeight(src.quality);
       const existing = byRes.get(h);
-      if (!existing || (existing.type !== 'hls' && src.type === 'hls')) {
+      if (!existing || (existing.type !== 'mp4' && src.type === 'mp4')) {
         byRes.set(h, src);
       }
     }
