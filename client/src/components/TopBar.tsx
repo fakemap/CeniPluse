@@ -61,6 +61,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [loadingLive, setLoadingLive] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const mobileSearchContainerRef = useRef<HTMLDivElement>(null);
   const langContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<number | null>(null);
 
@@ -104,24 +105,30 @@ export const TopBar: React.FC<TopBarProps> = ({
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Close dropdowns on outside click
+  // Close dropdowns on outside click / touch
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(e.target as Node)
-      ) {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node;
+      const inDesktopSearch =
+        searchContainerRef.current && searchContainerRef.current.contains(target);
+      const inMobileSearch =
+        mobileSearchContainerRef.current && mobileSearchContainerRef.current.contains(target);
+      if (!inDesktopSearch && !inMobileSearch) {
         setIsFocused(false);
       }
       if (
         langContainerRef.current &&
-        !langContainerRef.current.contains(e.target as Node)
+        !langContainerRef.current.contains(target)
       ) {
         setMobileLangOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
   }, []);
 
   // Debounced live search with AbortController request cancellation
@@ -457,7 +464,10 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Mobile-Only Row 2: Search Bar — hidden on the Search page (which has its own full search input) */}
-      <div className={`md:hidden px-3.5 pb-2.5 pt-0.5 w-full relative ${activeRoute === 'search' ? 'hidden' : ''}`}>
+      <div
+        ref={mobileSearchContainerRef}
+        className={`md:hidden px-3.5 pb-2.5 pt-0.5 w-full relative ${activeRoute === 'search' ? 'hidden' : ''}`}
+      >
         <div
           className={`flex items-center h-10 rounded-xl bg-[#141821]/80 backdrop-blur-md border transition-all pl-3.5 pr-2 gap-2 ${
             isFocused
