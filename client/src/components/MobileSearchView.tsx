@@ -66,12 +66,12 @@ export const MobileSearchView: React.FC<MobileSearchViewProps> = ({
   const localResults = term
     ? catalog.filter(
         (m) =>
-          m.title.toLowerCase().includes(term) ||
-          m.country.toLowerCase().includes(term) ||
-          m.regionTag.toLowerCase().includes(term) ||
-          String(m.year).includes(term) ||
-          m.genres.some((g) => g.toLowerCase().includes(term)) ||
-          m.cast.some((c) => c.toLowerCase().includes(term))
+          (m.title && m.title.toLowerCase().includes(term)) ||
+          (m.country && m.country.toLowerCase().includes(term)) ||
+          (m.regionTag && m.regionTag.toLowerCase().includes(term)) ||
+          (m.year && String(m.year).includes(term)) ||
+          (Array.isArray(m.genres) && m.genres.some((g) => typeof g === 'string' && g.toLowerCase().includes(term))) ||
+          (Array.isArray(m.cast) && m.cast.some((c) => typeof c === 'string' && c.toLowerCase().includes(term)))
       )
     : [];
 

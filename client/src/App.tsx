@@ -104,28 +104,59 @@ const DEFAULT_FILTERS: FilterState = {
   regionShortcut: 'All',
 };
 
+function matchGenre(genres: string[] | undefined, targetGenre: string): boolean {
+  if (targetGenre === 'All') return true;
+  if (!genres || !Array.isArray(genres) || genres.length === 0) return false;
+  const target = targetGenre.toLowerCase();
+  return genres.some((g) => {
+    if (typeof g !== 'string') return false;
+    const lower = g.toLowerCase();
+    if (lower === target) return true;
+    if (target === 'action' && lower.includes('action')) return true;
+    if (target === 'adventure' && lower.includes('adventure')) return true;
+    if (target === 'sci-fi' && (lower.includes('sci-fi') || lower.includes('science fiction'))) return true;
+    if (target === 'fantasy' && lower.includes('fantasy')) return true;
+    if (target === 'war' && lower.includes('war')) return true;
+    if (target === 'animation' && lower.includes('animat')) return true;
+    if (target === 'biography' && (lower.includes('bio') || lower.includes('docu') || lower.includes('history'))) return true;
+    return lower.includes(target);
+  });
+}
+
+function matchCountry(itemCountry: string | undefined, targetCountry: string): boolean {
+  if (targetCountry === 'All') return true;
+  if (!itemCountry || typeof itemCountry !== 'string') return false;
+  if (itemCountry === targetCountry) return true;
+  const lowerItem = itemCountry.toLowerCase();
+  const lowerTarget = targetCountry.toLowerCase();
+  if (lowerTarget === 'united states' && (lowerItem === 'us' || lowerItem === 'usa' || lowerItem === 'united states')) return true;
+  if (lowerTarget === 'united kingdom' && (lowerItem === 'uk' || lowerItem === 'gb' || lowerItem === 'united kingdom')) return true;
+  if (lowerTarget === 'south korea' && (lowerItem === 'kr' || lowerItem === 'korea' || lowerItem === 'south korea')) return true;
+  return lowerItem === lowerTarget;
+}
+
 function matchesFilters(item: MediaItem, filters: FilterState): boolean {
-  if (filters.genre !== 'All' && !item.genres.includes(filters.genre)) {
+  if (filters.genre !== 'All' && !matchGenre(item.genres, filters.genre)) {
     return false;
   }
-  if (filters.country !== 'All' && item.country !== filters.country) {
+  if (filters.country !== 'All' && !matchCountry(item.country, filters.country)) {
     return false;
   }
   if (filters.year !== 'All') {
+    const y = Number(item.year);
     if (filters.year === '2010s') {
-      if (item.year < 2010 || item.year > 2019) return false;
+      if (!y || y < 2010 || y > 2019) return false;
     } else if (filters.year === '2000s') {
-      if (item.year < 2000 || item.year > 2009) return false;
+      if (!y || y < 2000 || y > 2009) return false;
     } else if (String(item.year) !== filters.year) {
       return false;
     }
   }
-  if (
-    filters.language !== 'All' &&
-    item.language !== filters.language &&
-    !item.subtitlesAvailable.includes(filters.language)
-  ) {
-    return false;
+  if (filters.language !== 'All' && filters.language !== 'Original Audio') {
+    const subs = Array.isArray(item.subtitlesAvailable) ? item.subtitlesAvailable : [];
+    if (item.language !== filters.language && !subs.includes(filters.language)) {
+      return false;
+    }
   }
   return true;
 }
@@ -762,9 +793,79 @@ export const App: React.FC = () => {
     animation: 1,
   });
   const [loadingMoreCatalog, setLoadingMoreCatalog] = useState(false);
+  const [isFilteringLive, setIsFilteringLive] = useState(false);
+
+  // Auto-fetch page 1 from TMDB Discover whenever filters change on a browse view
+  useEffect(() => {
+    const bucket: 'movie' | 'series' | 'animation' | null =
+      activeRoute === 'movies'
+        ? 'movie'
+        : activeRoute === 'series'
+        ? 'series'
+        : activeRoute === 'animation'
+        ? 'animation'
+        : null;
+
+    if (!bucket) return;
+
+    const hasActiveFilters =
+      filters.genre !== 'All' ||
+      filters.country !== 'All' ||
+      filters.year !== 'All' ||
+      filters.sortBy !== 'For You';
+
+    // Reset pagination to page 1 for this bucket whenever filters change
+    setTmdbPageByBucket((prev) => ({ ...prev, [bucket]: 1 }));
+    setTmdbAppended((prev) => ({ ...prev, [bucket]: [] }));
+
+    if (!hasActiveFilters) {
+      setIsFilteringLive(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsFilteringLive(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const tmdbType: 'movie' | 'tv' = bucket === 'series' ? 'tv' : 'movie';
+        const effectiveGenre =
+          bucket === 'animation'
+            ? 'Animation'
+            : filters.genre !== 'All'
+            ? filters.genre
+            : undefined;
+
+        const res = await backendApi.discoverTmdbPage({
+          type: tmdbType,
+          page: 1,
+          genre: effectiveGenre,
+          country: filters.country !== 'All' ? filters.country : undefined,
+          year: filters.year !== 'All' ? filters.year : undefined,
+          sortBy: filters.sortBy,
+        });
+
+        if (!controller.signal.aborted) {
+          setTmdbAppended((prev) => ({ ...prev, [bucket]: res.items || [] }));
+          setTmdbPageByBucket((prev) => ({ ...prev, [bucket]: 1 }));
+        }
+      } catch (err) {
+        console.warn('Failed to load TMDB filtered items:', err);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsFilteringLive(false);
+        }
+      }
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeRoute, filters]);
 
   const handleLoadMoreFromTmdb = async (bucket: 'movie' | 'series' | 'animation') => {
-    if (loadingMoreCatalog) return;
+    if (loadingMoreCatalog || isFilteringLive) return;
     setLoadingMoreCatalog(true);
     try {
       const nextPage = (tmdbPageByBucket[bucket] || 1) + 1;
@@ -786,16 +887,11 @@ export const App: React.FC = () => {
       if (res.items.length > 0) {
         // Collect all existing IDs (catalog + already-appended) to dedupe
         setTmdbAppended((prev) => {
-          const allAppended = Object.values(prev).flat();
-          const existingKeys = new Set([
-            ...catalog.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)),
-            ...allAppended.map((m) => (m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)),
-          ]);
-          const fresh = res.items.filter(
-            (m) => !existingKeys.has(m.tmdbId ? `${m.type}_${m.tmdbId}` : m.id)
-          );
+          const current = prev[bucket] || [];
+          const currentIds = new Set(current.map((m) => m.id));
+          const fresh = res.items.filter((m) => !currentIds.has(m.id));
           if (fresh.length === 0) return prev;
-          return { ...prev, [bucket]: [...(prev[bucket] || []), ...fresh] };
+          return { ...prev, [bucket]: [...current, ...fresh] };
         });
         setTmdbPageByBucket((prev) => ({ ...prev, [bucket]: nextPage }));
       }
@@ -906,7 +1002,7 @@ export const App: React.FC = () => {
     [catalog]
   );
   const animationItems = useMemo(
-    () => catalog.filter((m) => m.type === 'animation' || m.genres.includes('Animation')),
+    () => catalog.filter((m) => m.type === 'animation' || matchGenre(m.genres, 'Animation')),
     [catalog]
   );
   const topRatedAll = useMemo(() => sortItems(catalog, 'Top Rated').slice(0, 14), [catalog]);
@@ -921,27 +1017,27 @@ export const App: React.FC = () => {
     [catalog]
   );
   const actionItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Action')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Action')), 'Hottest'),
     [catalog]
   );
   const romanceItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Romance')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Romance')), 'Hottest'),
     [catalog]
   );
   const horrorItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Horror')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Horror')), 'Hottest'),
     [catalog]
   );
   const comedyItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Comedy')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Comedy')), 'Hottest'),
     [catalog]
   );
   const scifiItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Sci-Fi') || m.genres.includes('Fantasy')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Sci-Fi') || matchGenre(m.genres, 'Fantasy')), 'Hottest'),
     [catalog]
   );
   const documentaryItems = useMemo(
-    () => sortItems(catalog.filter((m) => m.genres.includes('Documentary')), 'Hottest'),
+    () => sortItems(catalog.filter((m) => matchGenre(m.genres, 'Documentary')), 'Hottest'),
     [catalog]
   );
 
@@ -997,7 +1093,7 @@ export const App: React.FC = () => {
         ? catalog
         : catalog.filter((m) =>
             directoryTypeFilter === 'animation'
-              ? m.type === 'animation' || m.genres.includes('Animation')
+              ? m.type === 'animation' || matchGenre(m.genres, 'Animation')
               : m.type === directoryTypeFilter
           );
     return sortItems(
@@ -1302,13 +1398,13 @@ export const App: React.FC = () => {
 
     // 2. MOVIES SPOTLIGHT & FULL FLOWING MOVIES GRID VIEW
     if (activeRoute === 'movies') {
-      const actionMovies = trendingMovies.filter((m) => m.genres.includes('Action'));
+      const actionMovies = trendingMovies.filter((m) => matchGenre(m.genres, 'Action'));
       const thrillerHorror = trendingMovies.filter(
-        (m) => m.genres.includes('Horror') || m.genres.includes('Thriller')
+        (m) => matchGenre(m.genres, 'Horror') || matchGenre(m.genres, 'Thriller')
       );
-      const comedyMovies = trendingMovies.filter((m) => m.genres.includes('Comedy'));
+      const comedyMovies = trendingMovies.filter((m) => matchGenre(m.genres, 'Comedy'));
       const scifiMovies = trendingMovies.filter(
-        (m) => m.genres.includes('Sci-Fi') || m.genres.includes('Fantasy')
+        (m) => matchGenre(m.genres, 'Sci-Fi') || matchGenre(m.genres, 'Fantasy')
       );
 
       return (
@@ -1409,61 +1505,61 @@ export const App: React.FC = () => {
                 }}
               />
 
-              <div className="flex items-center justify-between px-4 md:px-0 mb-3 md:mb-4">
-                <h2 className="text-base md:text-xl font-extrabold text-[#F8FAFC]">
-                  {directoryHeading || 'Explore All Movies'}
-                </h2>
-                <span className="text-xs font-semibold text-[#94A3B8] tabular-nums">
-                  {spotlightMovies.length + (tmdbAppended['movie']?.length || 0)} movies loaded
-                </span>
-              </div>
+              {(() => {
+                const rawAppended = tmdbAppended['movie'] || [];
+                const seenIds = new Set(spotlightMovies.map((m) => m.id));
+                const freshAppended = rawAppended.filter((m) => !seenIds.has(m.id));
+                const allMovieItems = [...spotlightMovies, ...freshAppended];
 
-              {spotlightMovies.length > 0 ? (
-                <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
-                  {spotlightMovies.map((item) => (
-                    <PosterCard
-                      key={item.id}
-                      item={item}
-                      showCast
-                      showDirectoryBadges
-                      inWatchlist={watchlistIds.has(item.id)}
-                      onPlay={handlePlayItem}
-                      onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
-                      onToggleWatchlist={handleToggleWatchlist}
-                    />
-                  ))}
-                  {/* Appended TMDB pages always render at the BOTTOM — never re-sorted into the middle */}
-                  {(tmdbAppended['movie'] || []).map((item) => (
-                    <PosterCard
-                      key={item.id}
-                      item={item}
-                      showCast
-                      showDirectoryBadges
-                      inWatchlist={watchlistIds.has(item.id)}
-                      onPlay={handlePlayItem}
-                      onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
-                      onToggleWatchlist={handleToggleWatchlist}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="mx-4 md:mx-0 rounded-2xl bg-[#141821] border border-white/[0.06] py-12 text-center space-y-3">
-                  <p className="text-sm text-[#94A3B8]">
-                    No movies matched your current filter selection.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilters(DEFAULT_FILTERS);
-                      setDirectoryHeading('');
-                      setActiveCategoryCard('all');
-                    }}
-                    className="px-4 py-2 rounded-full bg-[#00E5FF] text-[#071018] text-xs font-extrabold"
-                  >
-                    Reset Filters
-                  </button>
-                </div>
-              )}
+                return (
+                  <>
+                    <div className="flex items-center justify-between px-4 md:px-0 mb-3 md:mb-4">
+                      <h2 className="text-base md:text-xl font-extrabold text-[#F8FAFC]">
+                        {directoryHeading || 'Explore All Movies'}
+                      </h2>
+                      <span className="text-xs font-semibold text-[#94A3B8] tabular-nums">
+                        {allMovieItems.length} movies loaded
+                      </span>
+                    </div>
+
+                    {isFilteringLive && allMovieItems.length === 0 ? (
+                      <GridSkeleton count={12} />
+                    ) : allMovieItems.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
+                        {allMovieItems.map((item) => (
+                          <PosterCard
+                            key={item.id}
+                            item={item}
+                            showCast
+                            showDirectoryBadges
+                            inWatchlist={watchlistIds.has(item.id)}
+                            onPlay={handlePlayItem}
+                            onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
+                            onToggleWatchlist={handleToggleWatchlist}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mx-4 md:mx-0 rounded-2xl bg-[#141821] border border-white/[0.06] py-12 text-center space-y-3">
+                        <p className="text-sm text-[#94A3B8]">
+                          No movies matched your current filter selection.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilters(DEFAULT_FILTERS);
+                            setDirectoryHeading('');
+                            setActiveCategoryCard('all');
+                          }}
+                          className="px-4 py-2 rounded-full bg-[#00E5FF] text-[#071018] text-xs font-extrabold"
+                        >
+                          Reset Filters
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               <InfiniteSentinel
                 onIntersect={() => handleLoadMoreFromTmdb('movie')}
@@ -1536,6 +1632,12 @@ export const App: React.FC = () => {
           ? 'Animation & Anime'
           : 'TV Series & Shows');
 
+      const bucketKey = activeRoute === 'animation' ? 'animation' : 'series';
+      const rawAppended = tmdbAppended[bucketKey] || [];
+      const seenIds = new Set(directoryItems.map((m) => m.id));
+      const freshAppended = rawAppended.filter((m) => !seenIds.has(m.id));
+      const allDirectoryItems = [...directoryItems, ...freshAppended];
+
       return (
         <div>
           <FilterMatrix
@@ -1546,28 +1648,17 @@ export const App: React.FC = () => {
 
           <div className="flex items-center justify-between px-4 md:px-0 mb-3 md:mb-4">
             <h1 className="text-base md:text-xl font-extrabold text-[#F8FAFC]">{heading}</h1>
-            <span className="text-xs font-semibold text-[#94A3B8]">
-              {directoryItems.length + (tmdbAppended[activeRoute === 'animation' ? 'animation' : 'series']?.length || 0)} titles
+            <span className="text-xs font-semibold text-[#94A3B8] tabular-nums">
+              {allDirectoryItems.length} titles
             </span>
           </div>
 
-          {directoryItems.length > 0 ? (
+          {isFilteringLive && allDirectoryItems.length === 0 ? (
+            <GridSkeleton count={12} />
+          ) : allDirectoryItems.length > 0 ? (
             <>
               <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
-                {directoryItems.map((item) => (
-                  <PosterCard
-                    key={item.id}
-                    item={item}
-                    showCast
-                    showDirectoryBadges
-                    inWatchlist={watchlistIds.has(item.id)}
-                    onPlay={handlePlayItem}
-                    onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
-                    onToggleWatchlist={handleToggleWatchlist}
-                  />
-                ))}
-                {/* Appended TMDB pages always render at the BOTTOM — never re-sorted into the middle */}
-                {(tmdbAppended[activeRoute === 'animation' ? 'animation' : 'series'] || []).map((item) => (
+                {allDirectoryItems.map((item) => (
                   <PosterCard
                     key={item.id}
                     item={item}

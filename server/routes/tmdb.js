@@ -157,7 +157,23 @@ router.get('/discover', async (req, res) => {
     if (sortBy === 'vote_average.desc') params['vote_count.gte'] = 150;
     if (req.query.country) params.with_origin_country = String(req.query.country).toUpperCase();
     if (req.query.genre) params.with_genres = String(req.query.genre);
-    if (req.query.year && /^\d{4}$/.test(String(req.query.year))) {
+    if (req.query.year === '2010s') {
+      if (mediaType === 'tv') {
+        params['first_air_date.gte'] = '2010-01-01';
+        params['first_air_date.lte'] = '2019-12-31';
+      } else {
+        params['primary_release_date.gte'] = '2010-01-01';
+        params['primary_release_date.lte'] = '2019-12-31';
+      }
+    } else if (req.query.year === '2000s') {
+      if (mediaType === 'tv') {
+        params['first_air_date.gte'] = '2000-01-01';
+        params['first_air_date.lte'] = '2009-12-31';
+      } else {
+        params['primary_release_date.gte'] = '2000-01-01';
+        params['primary_release_date.lte'] = '2009-12-31';
+      }
+    } else if (req.query.year && /^\d{4}$/.test(String(req.query.year))) {
       if (mediaType === 'tv') params.first_air_date_year = String(req.query.year);
       else params.primary_release_year = String(req.query.year);
     }

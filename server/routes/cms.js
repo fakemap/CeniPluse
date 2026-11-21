@@ -652,6 +652,9 @@ router.get('/public', async (req, res) => {
     country: m.country,
     regionTag: m.regionTag,
     language: m.language,
+    subtitlesAvailable: Array.isArray(m.subtitlesAvailable) && m.subtitlesAvailable.length > 0
+      ? m.subtitlesAvailable
+      : ['Original Audio', 'English Dub', 'Spanish Sub', 'French Sub'],
     genres: Array.isArray(m.genres) ? m.genres.slice(0, 4) : [],
     quality: m.quality,
     badge: m.badge,

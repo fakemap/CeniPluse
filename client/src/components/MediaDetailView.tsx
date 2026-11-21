@@ -895,7 +895,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
     const primaryGenre = enriched.genres[0];
     return catalog
-      .filter((m) => m.id !== enriched.id && (!primaryGenre || m.genres.includes(primaryGenre)))
+      .filter((m) => m.id !== enriched.id && (!primaryGenre || (Array.isArray(m.genres) && m.genres.some((g) => typeof g === 'string' && g.toLowerCase().includes(primaryGenre.toLowerCase())))))
       .slice(0, 12);
   }, [enriched.recommendations, enriched.id, enriched.genres, catalog]);
 

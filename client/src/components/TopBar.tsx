@@ -153,10 +153,10 @@ export const TopBar: React.FC<TopBarProps> = ({
     ? catalog
         .filter(
           (m) =>
-            m.title.toLowerCase().includes(trimmed) ||
-            m.genres.some((g) => g.toLowerCase().includes(trimmed)) ||
-            m.country.toLowerCase().includes(trimmed) ||
-            m.cast.some((c) => c.toLowerCase().includes(trimmed))
+            (m.title && m.title.toLowerCase().includes(trimmed)) ||
+            (Array.isArray(m.genres) && m.genres.some((g) => typeof g === 'string' && g.toLowerCase().includes(trimmed))) ||
+            (m.country && m.country.toLowerCase().includes(trimmed)) ||
+            (Array.isArray(m.cast) && m.cast.some((c) => typeof c === 'string' && c.toLowerCase().includes(trimmed)))
         )
         .slice(0, 6)
     : [];

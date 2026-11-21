@@ -265,17 +265,20 @@ export const backendApi = {
         Action: opts.type === 'tv' ? '10759' : '28',
         Adventure: opts.type === 'tv' ? '10759' : '12',
         Animation: '16',
+        Biography: '99',
         Comedy: '35',
         Crime: '80',
         Documentary: '99',
         Drama: '18',
         Family: '10751',
         Fantasy: opts.type === 'tv' ? '10765' : '14',
+        History: '36',
         Horror: '27',
         Mystery: '9648',
         Romance: '10749',
         'Sci-Fi': opts.type === 'tv' ? '10765' : '878',
         Thriller: '53',
+        War: opts.type === 'tv' ? '10768' : '10752',
       };
       const countryCodeMap: Record<string, string> = {
         'United States': 'US',
@@ -285,6 +288,8 @@ export const backendApi = {
         Japan: 'JP',
         India: 'IN',
         France: 'FR',
+        Germany: 'DE',
+        Netherlands: 'NL',
         Spain: 'ES',
         Canada: 'CA',
       };
@@ -306,7 +311,7 @@ export const backendApi = {
       if (opts.country && opts.country !== 'All' && countryCodeMap[opts.country]) {
         qs.set('country', countryCodeMap[opts.country]);
       }
-      if (opts.year && /^\d{4}$/.test(opts.year)) {
+      if (opts.year && opts.year !== 'All') {
         qs.set('year', opts.year);
       }
 
