@@ -231,7 +231,8 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
       }
 
       if (vaultReachable) {
-        for (const [qKey, qVal] of entries) {
+        for (let eIdx = 0; eIdx < entries.length; eIdx++) {
+          const [qKey, qVal] = entries[eIdx];
           if (!qVal || !qVal.url) continue;
           const rawUrl = String(qVal.url);
           const isHls = qVal.type === 'hls' || /\.m3u8(\?|$)/i.test(rawUrl);
@@ -246,10 +247,23 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
             qVal.headers?.origin ||
             (isHakuna ? 'https://filmboom.top' : UPSTREAM_A_ORIGIN);
           const proxied = buildProxyUrl(rawUrl, customRef, customOrig);
+          const hNum = Number(String(qKey).replace(/\D/g, '')) || 720;
+          const scaleFactor =
+            eIdx === 0
+              ? 1
+              : hNum >= 1080
+              ? 1
+              : hNum >= 720
+              ? 0.45
+              : hNum >= 480
+              ? 0.22
+              : 0.15;
           const formattedSize = qVal.size
             ? formatBytes(qVal.size)
             : probedBytes > 0
-            ? formatBytes(probedBytes)
+            ? eIdx === 0
+              ? formatBytes(probedBytes)
+              : `~${formatBytes(Math.round(probedBytes * scaleFactor))}`
             : isHls
             ? 'Adaptive'
             : 'Direct MP4';

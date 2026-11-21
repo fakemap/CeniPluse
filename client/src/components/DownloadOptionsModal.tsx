@@ -281,6 +281,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     }
 
     const sortedHeights = Array.from(byRes.keys()).sort((a, b) => b - a);
+    const highestSizeStr = sortedHeights.length > 0 ? byRes.get(sortedHeights[0])?.size || '' : '';
     return sortedHeights.map((h, idx) => {
       const matched = byRes.get(h)!;
       const label = h >= 2160 ? '4K UHD' : h >= 1080 ? '1080P FHD' : h >= 720 ? '720P HD' : `${h}P`;
@@ -291,11 +292,12 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 
       const bw = Number((matched as MediaSource & { bandwidth?: number }).bandwidth || 0);
       let displaySize = matched.size || '';
+      const isDuplicateTopSize = idx > 0 && displaySize && displaySize === highestSizeStr;
       if (matched.type === 'hls' && bw > 0) {
         // Include ~128 kbps audio track and 0.85 VBR factor for realistic total MP4 size
         const totalBps = bw * 0.85 + 128_000;
         displaySize = formatEstBytes((totalBps / 8) * runtimeSec);
-      } else if (!displaySize || /adaptive|~/i.test(displaySize)) {
+      } else if (!displaySize || isDuplicateTopSize || /adaptive|~/i.test(displaySize)) {
         const estBps = h >= 1080 ? 2_400_000 : h >= 720 ? 1_650_000 : h >= 480 ? 1_050_000 : 500_000;
         displaySize = formatEstBytes((estBps / 8) * runtimeSec);
       }
