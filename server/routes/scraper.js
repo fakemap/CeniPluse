@@ -1081,18 +1081,25 @@ async function scrapeMovieBoxMultiLang({
         ...bffHeaders,
         Referer: playReferer,
         'X-Vip-Restrict': '0',
+        'X-Forwarded-For': '102.89.34.12',
+        'X-Real-IP': '102.89.34.12',
       },
       signal: controller.signal,
     });
     if (!playRes.ok) return { sources: [], subtitles: [], audioVersions };
     const playJson = await playRes.json();
     const streams = Array.isArray(playJson?.data?.streams) ? playJson.data.streams : [];
+    const hlsStreams = Array.isArray(playJson?.data?.hls) ? playJson.data.hls : [];
 
     const sources = [];
     let firstStreamId = '';
+    let firstStreamFormat = 'MP4';
     for (const st of streams) {
       if (!st || !st.url) continue;
-      if (!firstStreamId && st.id) firstStreamId = String(st.id);
+      if (!firstStreamId && st.id) {
+        firstStreamId = String(st.id);
+        firstStreamFormat = 'MP4';
+      }
       const resNum = Number(String(st.resolutions || '').replace(/\D/g, '')) || 720;
       const qual = `${resNum}p`;
       const proxied = buildProxyUrl(String(st.url), 'https://filmboom.top/', 'https://filmboom.top');
@@ -1109,12 +1116,36 @@ async function scrapeMovieBoxMultiLang({
         audioTracks: [{ lang: activeAudioCode, label: activeAudioLabel }],
       });
     }
+    if (sources.length === 0 && hlsStreams.length > 0) {
+      for (const hst of hlsStreams) {
+        if (!hst || !hst.url) continue;
+        if (!firstStreamId && hst.id) {
+          firstStreamId = String(hst.id);
+          firstStreamFormat = 'HLS';
+        }
+        const resNum = Number(String(hst.resolutions || '').replace(/\D/g, '')) || 1080;
+        const qual = `${resNum}p`;
+        const proxied = buildProxyUrl(String(hst.url), 'https://filmboom.top/', 'https://filmboom.top');
+        sources.push({
+          quality: qual,
+          type: 'hls',
+          size: hst.size ? formatBytes(hst.size) : 'Adaptive HLS',
+          codec: 'HLS',
+          url: proxied,
+          downloadUrl: `${proxied}&download=1&quality=${resNum}`,
+          audioLang: activeAudioCode,
+          audioLabel: activeAudioLabel,
+          isDub: activeIsDub,
+          audioTracks: [{ lang: activeAudioCode, label: activeAudioLabel }],
+        });
+      }
+    }
 
     // Also fetch captions for this stream
     const subtitles = [];
     if (firstStreamId) {
       try {
-        const capUrl = `${AONEROOM_API_BASE}/wefeed-h5api-bff/subject/caption?format=MP4&id=${encodeURIComponent(
+        const capUrl = `${AONEROOM_API_BASE}/wefeed-h5api-bff/subject/caption?format=${firstStreamFormat}&id=${encodeURIComponent(
           firstStreamId
         )}&subjectId=${encodeURIComponent(playSubjectId)}&detailPath=${encodeURIComponent(
           playDetailPath
