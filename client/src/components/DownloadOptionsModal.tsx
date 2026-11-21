@@ -12,16 +12,18 @@ import {
   Check,
   AlignLeft,
   Video,
+  Volume2,
   Loader2,
 } from 'lucide-react';
 import type {
+  AudioVersionOption,
   DownloadRecord,
   EpisodeItem,
   MediaItem,
   MediaSource,
   SeasonSummary,
 } from '../types/media';
-import { backendApi } from '../services/api';
+import { backendApi, resolveOriginalAudioName } from '../services/api';
 import {
   downloadSubtitleFile,
   downloadVideoWithProgress,
@@ -38,6 +40,8 @@ interface DownloadOptionsModalProps {
   onSelectSeason: (num: number) => void;
   activeSources: MediaSource[];
   scrapedSubtitles?: Array<{ label: string; lang: string; url: string }>;
+  audioVersions?: AudioVersionOption[];
+  selectedAudioVersion?: AudioVersionOption | null;
   onClose: () => void;
   onRequestTitle: () => void;
   hasRequested: boolean;
@@ -50,9 +54,18 @@ interface QualityOption {
   label: string;
   format: string;
   size: string;
+  audioLabel?: string;
   recommended?: boolean;
   downloadUrl?: string;
   sourceType?: 'mp4' | 'hls';
+}
+
+interface AudioTrackChoice {
+  code: string;
+  label: string;
+  isOriginal: boolean;
+  subjectId?: string;
+  detailPath?: string;
 }
 
 interface SubtitleOptionItem {
@@ -78,6 +91,8 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   onSelectSeason,
   activeSources,
   scrapedSubtitles = [],
+  audioVersions = [],
+  selectedAudioVersion = null,
   onClose,
   onRequestTitle,
   hasRequested,
@@ -94,6 +109,10 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   );
   const [dataSaver, setDataSaver] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<string>('1080P');
+  const [selectedAudioLang, setSelectedAudioLang] = useState<string>(
+    () => selectedAudioVersion?.subjectId || 'orig'
+  );
+  const [modalAudioVersions, setModalAudioVersions] = useState<AudioVersionOption[]>(audioVersions);
   const [selectedSub, setSelectedSub] = useState<string>('en');
   const [downloadStatus, setDownloadStatus] = useState<string>('');
   const [downloadError, setDownloadError] = useState<string>('');
@@ -163,18 +182,26 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   const primaryEp =
     episodes.find((e) => e.episodeNumber === primaryEpNum) || episodes[0] || null;
 
-  // Dynamically resolve stream & download links for the selected movie or series episode
+  // Dynamically resolve stream & download links for the selected movie or series episode & audio version
   useEffect(() => {
-    if (isSeries && primaryEp?.sources && primaryEp.sources.length > 0) {
-      setResolvedModalSources(primaryEp.sources);
-      return;
-    }
-    if (!isSeries && activeSources.length > 0) {
-      setResolvedModalSources(activeSources);
-      if (scrapedSubtitles.length > 0) {
-        setResolvedModalSubs(scrapedSubtitles);
+    const activeVer =
+      modalAudioVersions.find((v) => v.subjectId === selectedAudioLang) || null;
+    const isSameAsParentVer =
+      (!activeVer && (!selectedAudioVersion || selectedAudioVersion.original)) ||
+      (activeVer && selectedAudioVersion && activeVer.subjectId === selectedAudioVersion.subjectId);
+
+    if (isSameAsParentVer) {
+      if (isSeries && primaryEp?.sources && primaryEp.sources.length > 0) {
+        setResolvedModalSources(primaryEp.sources);
+        return;
       }
-      return;
+      if (!isSeries && activeSources.length > 0) {
+        setResolvedModalSources(activeSources);
+        if (scrapedSubtitles.length > 0) {
+          setResolvedModalSubs(scrapedSubtitles);
+        }
+        return;
+      }
     }
 
     if (!item.tmdbId) return;
@@ -192,12 +219,17 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
           episode: isSeries ? primaryEpNum : undefined,
           title: item.title,
           year: item.year,
+          dubId: activeVer?.subjectId,
+          detailPath: activeVer?.detailPath,
         },
         controller.signal
       )
       .then((res) => {
         if (!mounted || controller.signal.aborted) return;
         setLoadingLinks(false);
+        if (res.audioVersions && res.audioVersions.length > 0 && modalAudioVersions.length === 0) {
+          setModalAudioVersions(res.audioVersions);
+        }
         if (res.sources && res.sources.length > 0) {
           setResolvedModalSources(res.sources);
         }
@@ -224,6 +256,9 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     primaryEp,
     activeSources,
     scrapedSubtitles,
+    selectedAudioLang,
+    modalAudioVersions,
+    selectedAudioVersion,
   ]);
 
   const downloadableSources = useMemo(
@@ -253,6 +288,71 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
     return `~${Math.round(mb)} MB`;
   };
 
+  const origLanguageName = useMemo(
+    () =>
+      resolveOriginalAudioName({
+        language: item.language,
+        country: item.country,
+        regionTag: item.regionTag,
+      }),
+    [item.language, item.country, item.regionTag]
+  );
+
+  // Build available Audio Track options (from MovieBox multi-language versions or resolved mirrors)
+  const audioOptions: AudioTrackChoice[] = useMemo(() => {
+    if (modalAudioVersions.length > 0) {
+      return modalAudioVersions.map((ver) => ({
+        code: ver.subjectId,
+        label: ver.lanName,
+        isOriginal: ver.original,
+        subjectId: ver.subjectId,
+        detailPath: ver.detailPath,
+      }));
+    }
+
+    const list: AudioTrackChoice[] = [
+      {
+        code: 'orig',
+        label: `Original (${origLanguageName})`,
+        isOriginal: true,
+      },
+    ];
+    const seen = new Set<string>([origLanguageName.toLowerCase()]);
+
+    for (const src of downloadableSources) {
+      const tracks = Array.isArray(src.audioTracks) && src.audioTracks.length > 0
+        ? src.audioTracks
+        : src.audioLabel
+        ? [{ lang: src.audioLang || 'orig', label: src.audioLabel }]
+        : [];
+      for (const t of tracks) {
+        const clean = String(t.label || '')
+          .replace(/^Original\s*\(([^)]+)\)$/i, '$1')
+          .replace(/\s*Dub$/i, '')
+          .trim();
+        if (!clean || /^original/i.test(clean)) continue;
+        const low = clean.toLowerCase();
+        if (seen.has(low)) continue;
+        seen.add(low);
+        list.push({
+          code: (t.lang || low).slice(0, 3).toLowerCase(),
+          label: `${clean} Dub`,
+          isOriginal: false,
+        });
+      }
+    }
+    return list;
+  }, [modalAudioVersions, downloadableSources, origLanguageName]);
+
+  useEffect(() => {
+    if (!audioOptions.some((a) => a.code === selectedAudioLang)) {
+      setSelectedAudioLang(audioOptions[0]?.code || 'orig');
+    }
+  }, [audioOptions, selectedAudioLang]);
+
+  const activeAudioObj =
+    audioOptions.find((a) => a.code === selectedAudioLang) || audioOptions[0];
+
   // Build quality cards from the REAL available server resolutions & accurate sizes
   const qualityOptions: QualityOption[] = useMemo(() => {
     const parseHeight = (q: string): number => {
@@ -262,21 +362,42 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       return m ? Number(m[1]) : 720;
     };
 
+    const defaultAudioTag = activeAudioObj?.label || `Original (${origLanguageName})`;
+
     if (downloadableSources.length === 0) {
       return [
-        { id: 'tier_1080', label: '1080P', format: 'MP4', size: '~1.4 GB', recommended: true },
-        { id: 'tier_720', label: '720P', format: 'MP4', size: '~800 MB', recommended: false },
-        { id: 'tier_480', label: '480P', format: 'MP4', size: '~450 MB', recommended: false },
+        { id: 'tier_1080', label: '1080P FHD', format: 'MP4', size: '~1.4 GB', audioLabel: defaultAudioTag, recommended: true },
+        { id: 'tier_720', label: '720P HD', format: 'MP4', size: '~800 MB', audioLabel: defaultAudioTag, recommended: false },
+        { id: 'tier_480', label: '480P', format: 'MP4', size: '~450 MB', audioLabel: defaultAudioTag, recommended: false },
+        { id: 'tier_360', label: '360P', format: 'MP4', size: '~250 MB', audioLabel: defaultAudioTag, recommended: false },
       ];
     }
 
-    // Deduplicate by resolution, preferring Original-Audio MP4 over VixSrc HLS for the same resolution
+    const wantsDub = selectedAudioLang !== 'orig';
+    // Deduplicate by resolution, matching user's selected audio language (Original vs Dub)
     const byRes = new Map<number, MediaSource>();
     for (const src of downloadableSources) {
       const h = parseHeight(src.quality);
       const existing = byRes.get(h);
-      if (!existing || (existing.type !== 'mp4' && src.type === 'mp4')) {
+      if (!existing) {
         byRes.set(h, src);
+        continue;
+      }
+      if (wantsDub) {
+        const srcHasDub =
+          src.isDub ||
+          src.audioTracks?.some((t) => t.lang.startsWith(selectedAudioLang.slice(0, 2)));
+        const exHasDub =
+          existing.isDub ||
+          existing.audioTracks?.some((t) => t.lang.startsWith(selectedAudioLang.slice(0, 2)));
+        if (srcHasDub && !exHasDub) {
+          byRes.set(h, src);
+        }
+      } else {
+        // Original Audio preferred: non-dub MP4 over HLS
+        if ((existing.isDub && !src.isDub) || (existing.type !== 'mp4' && src.type === 'mp4' && !src.isDub)) {
+          byRes.set(h, src);
+        }
       }
     }
 
@@ -286,9 +407,12 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       const matched = byRes.get(h)!;
       const label = h >= 2160 ? '4K UHD' : h >= 1080 ? '1080P FHD' : h >= 720 ? '720P HD' : `${h}P`;
       const rawDl = matched.downloadUrl || `${matched.url}&download=1`;
-      const dlWithQuality = rawDl.includes('quality=')
+      let dlWithQuality = rawDl.includes('quality=')
         ? rawDl.replace(/quality=\d+/i, `quality=${h}`)
         : `${rawDl}&quality=${h}`;
+      if (wantsDub) {
+        dlWithQuality += `&audioLang=${encodeURIComponent(selectedAudioLang)}`;
+      }
 
       const bw = Number((matched as MediaSource & { bandwidth?: number }).bandwidth || 0);
       let displaySize = matched.size || '';
@@ -303,16 +427,17 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       }
 
       return {
-        id: `q_${h}_${matched.id}`,
+        id: `q_${h}_${matched.id}_${selectedAudioLang}`,
         label,
         format: 'MP4',
         size: displaySize,
+        audioLabel: defaultAudioTag,
         recommended: idx === 0,
         downloadUrl: dlWithQuality,
         sourceType: matched.type === 'hls' ? 'hls' : 'mp4',
       };
     });
-  }, [downloadableSources, runtimeSec]);
+  }, [downloadableSources, runtimeSec, selectedAudioLang, activeAudioObj, origLanguageName]);
 
   // Build subtitle options from real resolved subtitles
   const subtitleOptions: SubtitleOptionItem[] = useMemo(() => {
@@ -484,8 +609,18 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
       : undefined;
     const tierKey = selectedQuality.replace(/\D/g, '') || '1080';
 
-    // Order candidate servers: preferred quality match first, then fallback servers
+    // Order candidate servers: match user's chosen audio track (Original vs Dub) & quality first
+    const wantsDub = selectedAudioLang !== 'orig';
+    const matchesChosenAudio = (s: MediaSource) =>
+      wantsDub
+        ? Boolean(
+            s.isDub ||
+              s.audioTracks?.some((t) => t.lang.startsWith(selectedAudioLang.slice(0, 2)))
+          )
+        : !s.isDub;
+
     const orderedSources = [
+      ...candidateSources.filter((s) => matchesChosenAudio(s) && s.quality.toLowerCase().includes(tierKey)),
       ...candidateSources.filter((s) => s.quality.toLowerCase().includes(tierKey)),
       ...candidateSources.filter((s) => !s.quality.toLowerCase().includes(tierKey)),
     ];
@@ -496,13 +631,20 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
 
     let lastErr = '';
     let succeeded = false;
+    const audioSuffix = (activeAudioObj?.label || `Original_${origLanguageName}`).replace(
+      /[^a-zA-Z0-9._-]/g,
+      '_'
+    );
 
     for (const src of orderedSources) {
       if (controller.signal.aborted) break;
-      const srcUrl = src.downloadUrl || src.url;
+      let srcUrl = src.downloadUrl || src.url;
       if (!srcUrl) continue;
+      if (wantsDub && !srcUrl.includes('audioLang=')) {
+        srcUrl += `${srcUrl.includes('?') ? '&' : '?'}audioLang=${encodeURIComponent(selectedAudioLang)}`;
+      }
       const srcType: 'mp4' | 'hls' = src.type === 'hls' ? 'hls' : 'mp4';
-      const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}.mp4`;
+      const videoFilename = `${safeTitle}${epSuffix ? `_${epSuffix}` : ''}_${activeQualityObj.label}_${audioSuffix}.mp4`;
 
       try {
         await downloadVideoWithProgress({
@@ -739,6 +881,51 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
             </div>
           )}
 
+          {/* Section 1B: Select Audio Language (Original vs Dubbed) */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="w-7 h-7 rounded-md bg-[#00E5FF]/15 text-[#00E5FF] flex items-center justify-center shrink-0">
+                  <Volume2 className="w-4 h-4" />
+                </span>
+                <span className="text-sm font-extrabold text-[#F8FAFC]">Select Audio Language</span>
+              </div>
+              <span className="text-[11px] font-bold text-[#10B981] bg-[#10B981]/12 border border-[#10B981]/30 px-2.5 py-0.5 rounded-full">
+                {activeAudioObj?.label || `Original (${origLanguageName})`}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2.5">
+              {audioOptions.map((aud) => {
+                const isSelected = selectedAudioLang === aud.code;
+                return (
+                  <button
+                    key={aud.code}
+                    type="button"
+                    onClick={() => setSelectedAudioLang(aud.code)}
+                    className={`min-h-[40px] px-3.5 rounded-xl border text-xs font-extrabold inline-flex items-center gap-2 transition-colors ${
+                      isSelected
+                        ? 'bg-[#10B981]/15 border-[#10B981]/60 text-[#10B981]'
+                        : 'bg-[#171D27] border-white/[0.08] text-[#CBD5E1] hover:border-white/25'
+                    }`}
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>{aud.label}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                        aud.isOriginal
+                          ? 'bg-[#10B981]/20 text-[#10B981]'
+                          : 'bg-[#00E5FF]/20 text-[#00E5FF]'
+                      }`}
+                    >
+                      {aud.isOriginal ? 'Original' : 'Dubbed'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Section 2: Select Quality (1080P, 720P, 480P, 360P) */}
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -794,11 +981,11 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
                     <div className="text-sm font-extrabold text-[#F8FAFC] tabular-nums pr-6">
                       {q.label}
                     </div>
-                    <div className="text-[11px] font-semibold text-[#CBD5E1] mt-0.5">
-                      {q.format}
+                    <div className="text-[11px] font-semibold text-[#10B981] mt-0.5 truncate">
+                      {q.audioLabel || activeAudioObj?.label || `Original (${origLanguageName})`}
                     </div>
                     <div className="text-[11px] text-[#94A3B8] mt-0.5 tabular-nums">
-                      {q.size}
+                      {q.format} • {q.size}
                     </div>
                   </button>
                 );
@@ -901,7 +1088,7 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
         <div className="shrink-0 px-4 sm:px-6 py-3.5 border-t border-white/[0.08] bg-[#0D121A] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] sm:pb-3.5">
           <span className="text-xs text-[#94A3B8] text-center sm:text-left tabular-nums">
             {isTitleAvailable
-              ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeQualityObj.size}`
+              ? `${activeQualityObj.label} (${activeQualityObj.format}) • ${activeAudioObj?.label || `Original (${origLanguageName})`} • ${activeQualityObj.size}`
               : 'No downloadable mirror linked yet — submit a request so we prioritize this title.'}
           </span>
 

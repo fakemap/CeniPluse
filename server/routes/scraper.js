@@ -18,7 +18,7 @@ const UA =
 // Server-side AES-256-GCM key to mask all upstream stream/subtitle URLs & headers from the browser
 const PROXY_KEY = crypto
   .createHash('sha256')
-  .update(process.env.SESSION_SECRET || `cinepulse_proxy_${__dirname}`)
+  .update(process.env.SESSION_SECRET || 'cinepulse_proxy_master_key_v2')
   .digest();
 
 function encryptProxyPayload(payload) {
@@ -126,6 +126,59 @@ function formatBytes(bytesInput) {
   return `${Math.round(mb)} MB`;
 }
 
+const ISO_LANG_LABELS = {
+  eng: 'English',
+  en: 'English',
+  fra: 'French',
+  fre: 'French',
+  fr: 'French',
+  spa: 'Spanish',
+  es: 'Spanish',
+  ita: 'Italian',
+  it: 'Italian',
+  kor: 'Korean',
+  ko: 'Korean',
+  jpn: 'Japanese',
+  ja: 'Japanese',
+  hin: 'Hindi',
+  hi: 'Hindi',
+  por: 'Portuguese',
+  pt: 'Portuguese',
+  deu: 'German',
+  ger: 'German',
+  de: 'German',
+  rus: 'Russian',
+  ru: 'Russian',
+  ara: 'Arabic',
+  ar: 'Arabic',
+  tur: 'Turkish',
+  tr: 'Turkish',
+  zho: 'Chinese',
+  chi: 'Chinese',
+  zh: 'Chinese',
+};
+
+function parseMp4LanguageFromBuffer(buf) {
+  const langs = [];
+  for (let i = 0; i < buf.length - 40; i++) {
+    if (buf[i] === 0x6d && buf[i + 1] === 0x64 && buf[i + 2] === 0x68 && buf[i + 3] === 0x64) {
+      const version = buf[i + 4];
+      const langOffset = version === 1 ? i + 36 : i + 24;
+      if (langOffset + 2 <= buf.length) {
+        const packed = buf.readUInt16BE(langOffset);
+        const c1 = ((packed >> 10) & 0x1f) + 0x60;
+        const c2 = ((packed >> 5) & 0x1f) + 0x60;
+        const c3 = (packed & 0x1f) + 0x60;
+        const code = String.fromCharCode(c1, c2, c3).toLowerCase();
+        if (/^[a-z]{3}$/.test(code) && code !== 'und') {
+          langs.push(code);
+        }
+      }
+    }
+  }
+  return langs[langs.length - 1] || '';
+}
+
 async function probeMp4UrlReachable(rawUrl, referer, origin) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3500);
@@ -136,7 +189,7 @@ async function probeMp4UrlReachable(rawUrl, referer, origin) {
         'User-Agent': UA,
         Referer: referer,
         Origin: origin,
-        Range: 'bytes=0-1',
+        Range: 'bytes=0-262143',
       },
       signal: controller.signal,
     });
@@ -147,12 +200,20 @@ async function probeMp4UrlReachable(rawUrl, referer, origin) {
     const totalBytes = res.headers.get('content-range')
       ? Number(String(res.headers.get('content-range')).split('/')[1] || 0)
       : Number(res.headers.get('content-length') || 0);
-    if (res.body && typeof res.body.cancel === 'function') {
+    let audioLang = '';
+    if (ok) {
+      try {
+        const buf = Buffer.from(await res.arrayBuffer());
+        audioLang = parseMp4LanguageFromBuffer(buf);
+      } catch {
+        audioLang = '';
+      }
+    } else if (res.body && typeof res.body.cancel === 'function') {
       res.body.cancel().catch(() => {});
     }
-    return { ok, status: res.status, totalBytes };
+    return { ok, status: res.status, totalBytes, audioLang };
   } catch {
-    return { ok: false, status: 0, totalBytes: 0 };
+    return { ok: false, status: 0, totalBytes: 0, audioLang: '' };
   } finally {
     clearTimeout(timer);
   }
@@ -211,6 +272,7 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
       // Verify first MP4 quality is reachable; on timeout (status 0) keep it rather than dropping all links
       let vaultReachable = true;
       let probedBytes = 0;
+      let probedAudioLang = '';
       if (entries.length > 0) {
         const [, firstVal] = entries[0];
         if (firstVal && firstVal.url) {
@@ -227,10 +289,13 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
           // Only drop if upstream explicitly rejected with 404/410/428/429 (not on slow timeout)
           vaultReachable = probe.ok || probe.status === 0;
           probedBytes = probe.totalBytes;
+          probedAudioLang = probe.audioLang || '';
         }
       }
 
       if (vaultReachable) {
+        const detectedLangLabel = ISO_LANG_LABELS[probedAudioLang] || 'Original';
+        const detectedLangCode = probedAudioLang || 'orig';
         for (let eIdx = 0; eIdx < entries.length; eIdx++) {
           const [qKey, qVal] = entries[eIdx];
           if (!qVal || !qVal.url) continue;
@@ -275,6 +340,21 @@ async function scrapeEngineOne({ tmdbId, type, season, episode }) {
             codec: qVal.codecName ? String(qVal.codecName).toUpperCase() : isHls ? 'HLS' : 'MP4',
             url: proxied,
             downloadUrl: `${proxied}&download=1`,
+            audioLang: detectedLangCode,
+            audioLabel:
+              detectedLangLabel === 'Original'
+                ? 'Original Audio'
+                : `Original (${detectedLangLabel})`,
+            isDub: false,
+            audioTracks: [
+              {
+                lang: detectedLangCode,
+                label:
+                  detectedLangLabel === 'Original'
+                    ? 'Original Audio'
+                    : `Original (${detectedLangLabel})`,
+              },
+            ],
           });
         }
       }
@@ -490,13 +570,26 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
             ? `${parsedOrigin}${u}`
             : `${baseDir}${u}`;
 
-        // Extract variant streams (#EXT-X-STREAM-INF:...RESOLUTION=WxH)
+        // Extract variant streams (#EXT-X-STREAM-INF:...RESOLUTION=WxH) and #EXT-X-MEDIA:TYPE=AUDIO tracks
         const lines = mText.split('\n');
         const parsedVariants = [];
+        const parsedAudioTracks = [];
         const seenRes = new Set();
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim();
-          if (line.startsWith('#EXT-X-STREAM-INF:')) {
+          if (line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+            const name = line.match(/NAME="([^"]+)"/)?.[1] || '';
+            const lang = line.match(/LANGUAGE="([^"]+)"/)?.[1] || '';
+            const code = (lang || name || 'und').slice(0, 3).toLowerCase();
+            const label =
+              ISO_LANG_LABELS[code] ||
+              ISO_LANG_LABELS[code.slice(0, 2)] ||
+              name ||
+              'Audio';
+            if (!parsedAudioTracks.some((a) => a.label.toLowerCase() === label.toLowerCase())) {
+              parsedAudioTracks.push({ lang: code, label });
+            }
+          } else if (line.startsWith('#EXT-X-STREAM-INF:')) {
             const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
             const avgBwMatch = line.match(/AVERAGE-BANDWIDTH=(\d+)/i);
             const bwMatch = line.match(/(?:^|[:,])BANDWIDTH=(\d+)/i);
@@ -555,15 +648,35 @@ async function scrapeEngineFour({ tmdbId, type, season, episode }) {
             }
           }
         }
-        const hasEnglishTrack = /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*(?:LANGUAGE="en|NAME="English)/i.test(
-          mText
+        const hasEnglishTrack = parsedAudioTracks.some((a) =>
+          /en|eng|english/i.test(`${a.lang} ${a.label}`)
         );
-        if (!hasEnglishTrack) {
-          // VixSrc is an Italian host: if no English audio track exists in the manifest, the video has baked-in Italian dubbing only
-          sources.length = 0;
-        } else if (parsedVariants.length > 0) {
-          sources.length = 0;
-          sources.push(...parsedVariants);
+        const audioTracks =
+          parsedAudioTracks.length > 0
+            ? parsedAudioTracks.sort((a, b) => {
+                const aEn = /en|eng|english/i.test(`${a.lang} ${a.label}`) ? 0 : 1;
+                const bEn = /en|eng|english/i.test(`${b.lang} ${b.label}`) ? 0 : 1;
+                return aEn - bEn;
+              })
+            : [{ lang: 'ita', label: 'Italian Dub' }];
+        const isDub = !hasEnglishTrack;
+        const audioLabel = hasEnglishTrack
+          ? audioTracks.length > 1
+            ? `Multi-Audio (${audioTracks.map((a) => a.label).join(' / ')})`
+            : 'Original (English)'
+          : 'Italian Dub';
+        const audioLang = hasEnglishTrack ? 'eng' : 'ita';
+
+        const variantsToUse = parsedVariants.length > 0 ? parsedVariants : sources;
+        sources.length = 0;
+        for (const v of variantsToUse) {
+          sources.push({
+            ...v,
+            audioLang,
+            audioLabel,
+            isDub,
+            audioTracks,
+          });
         }
       }
     } catch {
@@ -748,6 +861,292 @@ async function fetchExactOpenSubtitles({ tmdbId, type, season, episode }) {
 }
 
 // ============================================================================
+// 2C. MovieBox Multi-Language Catalog Resolver (Original Audio + All Dubs/Subs)
+// ============================================================================
+const AONEROOM_API_BASE = 'https://h5-api.aoneroom.com';
+let cachedAoneroomToken = '';
+let cachedAoneroomTokenExpiresAt = 0;
+
+async function getAoneroomGuestToken(signal) {
+  if (cachedAoneroomToken && cachedAoneroomTokenExpiresAt > Date.now()) {
+    return cachedAoneroomToken;
+  }
+  const res = await fetch(
+    `${AONEROOM_API_BASE}/wefeed-h5api-bff/app/get-latest-app-pkgs?app_name=moviebox`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'X-Client-Info': JSON.stringify({ timezone: 'UTC' }),
+        'User-Agent': UA,
+      },
+      signal,
+    }
+  );
+  const xUserRaw = res.headers.get('x-user') || res.headers.get('X-User') || '';
+  if (xUserRaw) {
+    try {
+      const parsed = JSON.parse(xUserRaw);
+      if (parsed && parsed.token) {
+        cachedAoneroomToken = parsed.token;
+        cachedAoneroomTokenExpiresAt = Date.now() + 2 * 60 * 60 * 1000;
+        return cachedAoneroomToken;
+      }
+    } catch {
+      // ignore JSON error
+    }
+  }
+  return '';
+}
+
+function formatDubDisplayName(rawName, lanCode, isOriginal) {
+  const clean = String(rawName || '').trim();
+  const code = String(lanCode || '').toLowerCase().trim();
+  const fullLang = ISO_LANG_LABELS[code] || ISO_LANG_LABELS[code.slice(0, 2)] || '';
+  if (isOriginal || /original/i.test(clean)) {
+    return fullLang ? `Original Audio (${fullLang})` : 'Original Audio';
+  }
+  if (/^ptbr\b/i.test(clean)) return clean.replace(/^ptbr/i, 'Portuguese (BR)');
+  if (/^esla\b/i.test(clean)) return clean.replace(/^esla/i, 'Spanish (LA)');
+  return clean || (fullLang ? `${fullLang} dub` : 'Dubbed Audio');
+}
+
+async function resolveTitleMetadataFromTmdb({ tmdbId, type }) {
+  if (!tmdbId) return { title: '', year: '' };
+  try {
+    const tmdbRoutes = require('../db/store');
+    const key = (tmdbRoutes.getSettings?.()?.tmdbApiKey || process.env.TMDB_API_KEY || '').trim();
+    if (!key) return { title: '', year: '' };
+    const isBearer = key.length > 50 || key.startsWith('eyJ');
+    const endpoint = `https://api.themoviedb.org/3/${type === 'tv' ? 'tv' : 'movie'}/${tmdbId}${
+      isBearer ? '' : `?api_key=${encodeURIComponent(key)}`
+    }`;
+    const r = await fetch(endpoint, {
+      headers: isBearer
+        ? { Accept: 'application/json', Authorization: `Bearer ${key}` }
+        : { Accept: 'application/json' },
+    });
+    if (!r.ok) return { title: '', year: '' };
+    const d = await r.json();
+    const t = d.title || d.name || '';
+    const rel = d.release_date || d.first_air_date || '';
+    return { title: t, year: rel ? rel.slice(0, 4) : '' };
+  } catch {
+    return { title: '', year: '' };
+  }
+}
+
+async function scrapeMovieBoxMultiLang({
+  tmdbId,
+  type,
+  season = 1,
+  episode = 1,
+  title = '',
+  year = '',
+  requestedDubId = '',
+  requestedDetailPath = '',
+}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7500);
+  try {
+    const token = await getAoneroomGuestToken(controller.signal);
+    if (!token) return { sources: [], subtitles: [], audioVersions: [] };
+
+    const bffHeaders = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Client-Info': JSON.stringify({ timezone: 'UTC' }),
+      'X-Request-Lang': 'en',
+      Authorization: `Bearer ${token}`,
+      Cookie: `token=${token}`,
+      'User-Agent': UA,
+    };
+
+    let targetSubjectId = String(requestedDubId || '').trim();
+    let targetDetailPath = String(requestedDetailPath || '').trim();
+    let searchTitle = String(title || '').trim();
+    let searchYear = String(year || '').trim();
+
+    if ((!targetSubjectId || !targetDetailPath) && !searchTitle && tmdbId) {
+      const meta = await resolveTitleMetadataFromTmdb({ tmdbId, type });
+      searchTitle = meta.title;
+      if (!searchYear) searchYear = meta.year;
+    }
+
+    if (!targetSubjectId || !targetDetailPath) {
+      if (!searchTitle) return { sources: [], subtitles: [], audioVersions: [] };
+      const searchRes = await fetch(`${AONEROOM_API_BASE}/wefeed-h5api-bff/subject/search`, {
+        method: 'POST',
+        headers: bffHeaders,
+        body: JSON.stringify({
+          keyword: searchTitle,
+          page: 1,
+          perPage: 12,
+          subjectType: 0,
+        }),
+        signal: controller.signal,
+      });
+      if (!searchRes.ok) return { sources: [], subtitles: [], audioVersions: [] };
+      const searchJson = await searchRes.json();
+      const items = Array.isArray(searchJson?.data?.items) ? searchJson.data.items : [];
+      if (items.length === 0) return { sources: [], subtitles: [], audioVersions: [] };
+
+      const norm = (s) =>
+        String(s || '')
+          .toLowerCase()
+          .replace(/\[[^\]]*\]/g, '')
+          .replace(/[^a-z0-9]+/g, '')
+          .trim();
+      const targetNorm = norm(searchTitle);
+      const wantType = type === 'tv' ? 2 : 1;
+
+      const scored = items
+        .filter((it) => it && it.subjectId && it.detailPath)
+        .map((it) => {
+          let score = 0;
+          const itNorm = norm(it.title);
+          const isBracketDub = /\[[^\]]+\]/.test(String(it.title || ''));
+          if (it.subjectType === wantType) score += 50;
+          if (itNorm === targetNorm) score += 40;
+          else if (itNorm.startsWith(targetNorm) || targetNorm.startsWith(itNorm)) score += 20;
+          if (!isBracketDub) score += 15; // Prefer original main entry over "[English]" duplicate
+          const itYear = String(it.releaseDate || '').slice(0, 4);
+          if (searchYear && itYear) {
+            const diff = Math.abs(Number(itYear) - Number(searchYear));
+            if (diff === 0) score += 30;
+            else if (diff === 1) score += 15;
+          }
+          return { it, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) return { sources: [], subtitles: [], audioVersions: [] };
+      targetSubjectId = String(scored[0].it.subjectId);
+      targetDetailPath = String(scored[0].it.detailPath);
+    }
+
+    // Fetch detail to discover all dubs (Original Audio, English dub, French dub, Hindi dub, etc.)
+    const detailRes = await fetch(
+      `${AONEROOM_API_BASE}/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(
+        targetDetailPath
+      )}`,
+      { headers: bffHeaders, signal: controller.signal }
+    );
+    const detailJson = detailRes.ok ? await detailRes.json() : null;
+    const rawDubs = Array.isArray(detailJson?.data?.subject?.dubs)
+      ? detailJson.data.subject.dubs
+      : [];
+
+    const audioVersions = rawDubs
+      .filter((d) => d && d.subjectId && d.detailPath)
+      .map((d) => ({
+        subjectId: String(d.subjectId),
+        detailPath: String(d.detailPath),
+        lanName: formatDubDisplayName(d.lanName, d.lanCode, Boolean(d.original)),
+        lanCode: String(d.lanCode || 'orig').toLowerCase(),
+        original: Boolean(d.original),
+      }))
+      .sort((a, b) => (a.original === b.original ? 0 : a.original ? -1 : 1));
+
+    // Determine which dub version to play right now:
+    // If user requested a specific dub (requestedDubId), use it; otherwise ALWAYS pick the Original Audio entry!
+    let chosenVersion = null;
+    if (requestedDubId && audioVersions.length > 0) {
+      chosenVersion =
+        audioVersions.find((v) => v.subjectId === String(requestedDubId)) ||
+        audioVersions.find((v) => v.lanCode === String(requestedDubId).toLowerCase()) ||
+        null;
+    }
+    if (!chosenVersion && audioVersions.length > 0) {
+      chosenVersion = audioVersions.find((v) => v.original) || audioVersions[0];
+    }
+
+    const playSubjectId = chosenVersion ? chosenVersion.subjectId : targetSubjectId;
+    const playDetailPath = chosenVersion ? chosenVersion.detailPath : targetDetailPath;
+    const activeAudioLabel = chosenVersion ? chosenVersion.lanName : 'Original Audio';
+    const activeAudioCode = chosenVersion ? chosenVersion.lanCode : 'orig';
+    const activeIsDub = chosenVersion ? !chosenVersion.original : false;
+
+    const seNum = type === 'tv' ? Math.max(1, Number(season) || 1) : 0;
+    const epNum = type === 'tv' ? Math.max(1, Number(episode) || 1) : 0;
+
+    const playUrl = `${AONEROOM_API_BASE}/wefeed-h5api-bff/subject/play?subjectId=${encodeURIComponent(
+      playSubjectId
+    )}&se=${seNum}&ep=${epNum}&detailPath=${encodeURIComponent(
+      playDetailPath
+    )}&streamSignType=1&supportCodecs[h264]=1`;
+
+    const playReferer = `https://fmoviesunblocked.net/spa/videoPlayPage/movies/${playDetailPath}?id=${playSubjectId}&type=/movie/detail`;
+    const playRes = await fetch(playUrl, {
+      headers: {
+        ...bffHeaders,
+        Referer: playReferer,
+        'X-Vip-Restrict': '0',
+      },
+      signal: controller.signal,
+    });
+    if (!playRes.ok) return { sources: [], subtitles: [], audioVersions };
+    const playJson = await playRes.json();
+    const streams = Array.isArray(playJson?.data?.streams) ? playJson.data.streams : [];
+
+    const sources = [];
+    let firstStreamId = '';
+    for (const st of streams) {
+      if (!st || !st.url) continue;
+      if (!firstStreamId && st.id) firstStreamId = String(st.id);
+      const resNum = Number(String(st.resolutions || '').replace(/\D/g, '')) || 720;
+      const qual = `${resNum}p`;
+      const proxied = buildProxyUrl(String(st.url), 'https://filmboom.top/', 'https://filmboom.top');
+      sources.push({
+        quality: qual,
+        type: 'mp4',
+        size: st.size ? formatBytes(st.size) : 'Direct MP4',
+        codec: st.codecName ? String(st.codecName).toUpperCase() : 'MP4',
+        url: proxied,
+        downloadUrl: `${proxied}&download=1`,
+        audioLang: activeAudioCode,
+        audioLabel: activeAudioLabel,
+        isDub: activeIsDub,
+        audioTracks: [{ lang: activeAudioCode, label: activeAudioLabel }],
+      });
+    }
+
+    // Also fetch captions for this stream
+    const subtitles = [];
+    if (firstStreamId) {
+      try {
+        const capUrl = `${AONEROOM_API_BASE}/wefeed-h5api-bff/subject/caption?format=MP4&id=${encodeURIComponent(
+          firstStreamId
+        )}&subjectId=${encodeURIComponent(playSubjectId)}&detailPath=${encodeURIComponent(
+          playDetailPath
+        )}`;
+        const capRes = await fetch(capUrl, { headers: bffHeaders, signal: controller.signal });
+        if (capRes.ok) {
+          const capJson = await capRes.json();
+          const caps = Array.isArray(capJson?.data?.captions) ? capJson.data.captions : [];
+          for (const c of caps) {
+            if (c && c.url) {
+              subtitles.push({
+                label: c.lanName || c.lan || 'Subtitle',
+                lang: String(c.lan || 'en').slice(0, 2).toLowerCase(),
+                url: buildProxyUrl(String(c.url), 'https://filmboom.top/', 'https://filmboom.top'),
+              });
+            }
+          }
+        }
+      } catch {
+        // ignore caption error
+      }
+    }
+
+    return { sources, subtitles, audioVersions };
+  } catch {
+    return { sources: [], subtitles: [], audioVersions: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ============================================================================
 // 3. Season Pack & Episode Archive Scraper (Engine 7)
 // ============================================================================
 async function scrapeSeasonArchives({ title, type = 'movie', season = 1 }) {
@@ -837,28 +1236,48 @@ router.get('/resolve', async (req, res) => {
   const episode = Math.max(1, Number(req.query.episode || req.query.e || 1));
   const title = String(req.query.title || '').trim();
   const year = String(req.query.year || '').trim();
+  const requestedDubId = String(req.query.dubId || '').trim();
+  const requestedDetailPath = String(req.query.detailPath || '').trim();
 
-  if (!tmdbId && !title) {
+  if (!tmdbId && !title && !requestedDubId) {
     return res.status(400).json({ error: 'tmdbId or title is required' });
   }
 
-  const cacheKey = `${type}:${tmdbId}:${season}:${episode}`;
+  const cacheKey = `${type}:${tmdbId}:${season}:${episode}:${requestedDubId || 'orig'}`;
   const cached = resolveCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json({ ...cached.payload, cached: true });
   }
 
-  const context = { tmdbId, type, season, episode, title, year };
+  const context = {
+    tmdbId,
+    type,
+    season,
+    episode,
+    title,
+    year,
+    requestedDubId,
+    requestedDetailPath,
+  };
 
-  const tasks = tmdbId
+  // When a specific MovieBox dub/sub version is selected, resolve that exact audio version directly
+  const tasks = requestedDubId
     ? [
-        scrapeEngineOne(context),
-        scrapeEngineFour(context),
-        scrapeEngineTwo(context),
-        scrapeEngineSix(context),
-        fetchExactOpenSubtitles(context),
+        scrapeMovieBoxMultiLang(context),
+        ...(tmdbId ? [fetchExactOpenSubtitles(context)] : []),
       ]
-    : [];
+    : [
+        scrapeMovieBoxMultiLang(context),
+        ...(tmdbId
+          ? [
+              scrapeEngineOne(context),
+              scrapeEngineFour(context),
+              scrapeEngineTwo(context),
+              scrapeEngineSix(context),
+              fetchExactOpenSubtitles(context),
+            ]
+          : []),
+      ];
 
   const [providerResults, archiveResult] = await Promise.all([
     Promise.allSettled(tasks),
@@ -869,29 +1288,30 @@ router.get('/resolve', async (req, res) => {
 
   const rawSources = [];
   const subtitles = [];
-
-  // Prioritize accurate subtitles:
-  // 1) Engine 4 embedded stream-synced subs (index 1)
-  // 2) Exact IMDB+Season+Episode OpenSubtitles v3 (index 4)
-  // 3) Engine 2 (index 2) & Engine 1 (index 0) as fallback for additional languages
-  const subtitlePriorityOrder = [1, 4, 2, 0, 3];
+  const audioVersions = [];
 
   providerResults.forEach((r) => {
     if (r.status === 'fulfilled' && r.value) {
       if (Array.isArray(r.value.sources) && r.value.sources.length > 0) {
         rawSources.push(...r.value.sources);
       }
+      if (Array.isArray(r.value.audioVersions) && r.value.audioVersions.length > 0 && audioVersions.length === 0) {
+        audioVersions.push(...r.value.audioVersions);
+      }
     }
   });
 
-  subtitlePriorityOrder.forEach((idx) => {
-    const r = providerResults[idx];
+  // Prioritize accurate subtitles:
+  // 1) MovieBox / Engine 4 embedded stream-synced subs
+  // 2) Exact IMDB+Season+Episode OpenSubtitles v3
+  // 3) Other engines as fallback for additional languages
+  providerResults.forEach((r) => {
     if (r && r.status === 'fulfilled' && r.value && Array.isArray(r.value.subtitles)) {
       subtitles.push(...r.value.subtitles);
     }
   });
 
-  // Sort by resolution descending (1080p first), preferring Original-Audio MP4 over VixSrc HLS when resolutions tie
+  // Sort by Original Audio first (non-dubs before dubs), then resolution descending (1080p first), preferring MP4 over HLS on ties
   const parseResScore = (q) => {
     const s = String(q || '').toLowerCase();
     if (s.includes('4k') || s.includes('2160')) return 2160;
@@ -899,6 +1319,9 @@ router.get('/resolve', async (req, res) => {
     return m ? Number(m[1]) : 720;
   };
   rawSources.sort((a, b) => {
+    const aDub = a.isDub ? 1 : 0;
+    const bDub = b.isDub ? 1 : 0;
+    if (aDub !== bDub) return aDub - bDub;
     const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
     if (resDiff !== 0) return resDiff;
     if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
@@ -919,6 +1342,10 @@ router.get('/resolve', async (req, res) => {
       codec: src.codec || (src.type === 'mp4' ? 'MP4' : 'HLS'),
       url: src.url,
       downloadUrl: src.downloadUrl || `${src.url}&download=1`,
+      audioLang: src.audioLang || 'orig',
+      audioLabel: src.audioLabel || 'Original Audio',
+      isDub: Boolean(src.isDub),
+      audioTracks: Array.isArray(src.audioTracks) ? src.audioTracks : [],
     };
   });
 
@@ -938,6 +1365,7 @@ router.get('/resolve', async (req, res) => {
     episode: type === 'tv' ? episode : undefined,
     sources,
     subtitles: uniqueSubtitles,
+    audioVersions,
     seasonPacks: archiveResult.seasonDownloads || [],
     ...(req.query.diag === '1'
       ? {
@@ -1400,6 +1828,7 @@ async function streamHlsAsVideoDownload({
   manifestUrl,
   customHeaders,
   requestedQuality,
+  requestedAudioLang,
   filename,
   req,
   res,
@@ -1408,7 +1837,7 @@ async function streamHlsAsVideoDownload({
   let mediaPlaylistUrl = manifestUrl;
   let audioSegments = [];
 
-  // If this is a master playlist (#EXT-X-STREAM-INF), select the best matching video variant + English audio track
+  // If this is a master playlist (#EXT-X-STREAM-INF), select the best matching video variant + requested or English audio track
   if (manifestBody.includes('#EXT-X-STREAM-INF:')) {
     const lines = manifestBody.split('\n');
     const variants = [];
@@ -1439,10 +1868,14 @@ async function streamHlsAsVideoDownload({
         }
       } else if (l.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
         const uri = l.match(/URI="([^"]+)"/i)?.[1];
+        const lang = (l.match(/LANGUAGE="([^"]+)"/i)?.[1] || '').toLowerCase();
+        const name = (l.match(/NAME="([^"]+)"/i)?.[1] || '').toLowerCase();
         if (uri) {
           const isEng = /LANGUAGE="en|NAME="English/i.test(l);
           audioTracks.push({
             isEng,
+            lang,
+            name,
             url: resolveRelativeUrl(uri, manifestUrl),
           });
         }
@@ -1460,7 +1893,15 @@ async function streamHlsAsVideoDownload({
     }
 
     if (audioTracks.length > 0) {
-      const chosenAudio = audioTracks.find((a) => a.isEng) || audioTracks[0];
+      const targetLang = String(requestedAudioLang || '').toLowerCase().trim();
+      const matchedAudio = targetLang
+        ? audioTracks.find(
+            (a) =>
+              a.lang.startsWith(targetLang.slice(0, 2)) ||
+              a.name.includes(targetLang)
+          )
+        : null;
+      const chosenAudio = matchedAudio || audioTracks.find((a) => a.isEng) || audioTracks[0];
       try {
         const aBuf = await fetchUpstreamBuffer(chosenAudio.url, customHeaders);
         audioSegments = await parseHlsMediaSegments(
@@ -1728,6 +2169,7 @@ router.get('/proxy', async (req, res) => {
             manifestUrl: rawUrl,
             customHeaders: { Referer: referer, Origin: origin },
             requestedQuality: req.query.quality,
+            requestedAudioLang: req.query.audioLang,
             filename: requestedFilename || 'cenipluse-video.mp4',
             req,
             res,

@@ -1,4 +1,5 @@
 import type {
+  AudioVersionOption,
   CmsTitleItem,
   EpisodeItem,
   LocalMediaFile,
@@ -41,6 +42,10 @@ export interface TmdbDetailResponse {
   director: string;
   runtime: number;
   genres: string[];
+  language?: string;
+  originCountry?: string;
+  country?: string;
+  regionTag?: MediaItem['regionTag'];
   trailerYoutubeId: string;
   videos: VideoClip[];
   recommendations?: TmdbApiItem[];
@@ -52,6 +57,65 @@ export interface TmdbDetailResponse {
 }
 
 const trailerKeyCache = new Map<string, string>();
+
+export function resolveOriginalAudioName(params: {
+  language?: string;
+  originCountry?: string;
+  country?: string;
+  regionTag?: string;
+}): string {
+  const lang = String(params.language || '').toUpperCase().trim();
+  const origin = String(params.originCountry || '').toUpperCase().trim();
+  const country = String(params.country || '').toLowerCase();
+  const region = String(params.regionTag || '').toLowerCase();
+
+  if (lang === 'KO' || lang === 'KOR' || origin === 'KR' || country.includes('korea') || region.includes('k-drama')) {
+    return 'Korean';
+  }
+  if (lang === 'JA' || lang === 'JPN' || origin === 'JP' || country.includes('japan') || region.includes('anime')) {
+    return 'Japanese';
+  }
+  if (lang === 'HI' || lang === 'HIN' || origin === 'IN' || country.includes('india') || region.includes('bollywood')) {
+    return 'Hindi';
+  }
+  if (lang === 'FR' || lang === 'FRA' || lang === 'FRE' || origin === 'FR' || country.includes('france')) {
+    return 'French';
+  }
+  if (lang === 'ES' || lang === 'SPA' || origin === 'ES' || origin === 'MX' || country.includes('spain') || country.includes('mexico')) {
+    return 'Spanish';
+  }
+  if (lang === 'IT' || lang === 'ITA' || origin === 'IT' || country.includes('italy')) {
+    return 'Italian';
+  }
+  if (lang === 'PT' || lang === 'POR' || origin === 'BR' || origin === 'PT' || country.includes('brazil') || country.includes('portugal')) {
+    return 'Portuguese';
+  }
+  if (lang === 'DE' || lang === 'DEU' || lang === 'GER' || origin === 'DE' || country.includes('germany')) {
+    return 'German';
+  }
+  if (lang === 'ZH' || lang === 'ZHO' || lang === 'CHI' || origin === 'CN' || origin === 'TW' || origin === 'HK' || country.includes('china')) {
+    return 'Chinese';
+  }
+  if (lang === 'TR' || lang === 'TUR' || origin === 'TR' || country.includes('turkey')) {
+    return 'Turkish';
+  }
+  if (lang === 'RU' || lang === 'RUS' || origin === 'RU' || country.includes('russia')) {
+    return 'Russian';
+  }
+  if (lang === 'AR' || lang === 'ARA' || country.includes('egypt') || country.includes('arab')) {
+    return 'Arabic';
+  }
+  if (lang === 'TH' || lang === 'THA' || origin === 'TH' || country.includes('thailand')) {
+    return 'Thai';
+  }
+  if (lang === 'TL' || lang === 'FIL' || origin === 'PH' || country.includes('philippines')) {
+    return 'Filipino';
+  }
+  if (lang === 'ID' || lang === 'IND' || origin === 'ID' || country.includes('indonesia')) {
+    return 'Indonesian';
+  }
+  return 'English';
+}
 
 export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
   const lang = (item.language || 'EN').toUpperCase();
@@ -88,6 +152,13 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
       ? 'Anime'
       : 'Hollywood');
 
+  const origAudioName = resolveOriginalAudioName({
+    language: lang,
+    originCountry: origin,
+    country,
+    regionTag,
+  });
+
   const genres = item.genres?.length
     ? item.genres
     : isAnim
@@ -105,8 +176,8 @@ export function mapTmdbToMediaItem(item: TmdbApiItem): MediaItem {
     rating: item.rating || 7.5,
     country,
     regionTag,
-    language: 'Original Audio',
-    subtitlesAvailable: ['Original Audio', 'English Dub', 'Spanish Sub', 'French Sub'],
+    language: `Original (${origAudioName})`,
+    subtitlesAvailable: [`Original (${origAudioName})`, 'English Sub', 'Spanish Sub', 'French Sub'],
     genres,
     quality: '1080p',
     badge: 'HD',
@@ -410,11 +481,14 @@ export const backendApi = {
       episode?: number;
       title?: string;
       year?: number;
+      dubId?: string;
+      detailPath?: string;
     },
     signal?: AbortSignal
   ): Promise<{
     sources: MediaSource[];
     subtitles: Array<{ label: string; lang: string; url: string }>;
+    audioVersions?: AudioVersionOption[];
     seasonPacks?: Array<{ id: string; quality: string; label: string; url: string }>;
   }> {
     try {
@@ -425,6 +499,8 @@ export const backendApi = {
       if (params.episode) qs.set('episode', String(params.episode));
       if (params.title) qs.set('title', params.title);
       if (params.year) qs.set('year', String(params.year));
+      if (params.dubId) qs.set('dubId', String(params.dubId));
+      if (params.detailPath) qs.set('detailPath', String(params.detailPath));
 
       const viteEnv = (
         import.meta as ImportMeta & { env?: Record<string, string | undefined> }
@@ -435,31 +511,80 @@ export const backendApi = {
           window.location.hostname === '127.0.0.1' ||
           window.location.hostname.startsWith('192.168.') ||
           window.location.hostname.startsWith('10.'));
-      const defaultRemoteScraper = isLocalClient ? '' : 'https://fjiklhy643.apps.bot-hosting.cloud';
-      const scraperBase = String(viteEnv?.VITE_SCRAPER_API_BASE || defaultRemoteScraper)
+      const remoteScraper = String(
+        viteEnv?.VITE_SCRAPER_API_BASE ||
+          (isLocalClient ? '' : 'https://fjiklhy643.apps.bot-hosting.cloud')
+      )
         .trim()
         .replace(/\/+$/, '');
-      const prefixUrl = (u?: string) =>
-        u && scraperBase && u.startsWith('/') ? `${scraperBase}${u}` : u || '';
 
-      const res = await fetch(`${scraperBase}/api/scraper/resolve?${qs.toString()}`, { signal });
-      if (!res.ok) return { sources: [], subtitles: [], seasonPacks: [] };
-      const data = await res.json();
       const parseResScore = (q?: string) => {
         const s = String(q || '').toLowerCase();
         if (s.includes('4k') || s.includes('2160')) return 2160;
         const m = s.match(/(\d{3,4})/);
         return m ? Number(m[1]) : 720;
       };
-      const rawSources: MediaSource[] = Array.isArray(data.sources)
-        ? data.sources.map((s: MediaSource) => ({
-            ...s,
-            url: prefixUrl(s.url),
-            downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
-          }))
-        : [];
-      // Order by resolution descending (1080p first), preferring Original-Audio MP4 over VixSrc HLS when resolutions tie
+
+      const fetchFromBase = async (base: string) => {
+        const prefix = (u?: string) =>
+          u && base && u.startsWith('/') ? `${base}${u}` : u || '';
+        const r = await fetch(`${base}/api/scraper/resolve?${qs.toString()}`, { signal });
+        if (!r.ok) return null;
+        const d = await r.json();
+        return {
+          sources: Array.isArray(d.sources)
+            ? d.sources.map((s: MediaSource) => ({
+                ...s,
+                url: prefix(s.url),
+                downloadUrl: s.downloadUrl ? prefix(s.downloadUrl) : undefined,
+              }))
+            : [],
+          subtitles: Array.isArray(d.subtitles)
+            ? d.subtitles.map((sub: { label: string; lang: string; url: string }) => ({
+                ...sub,
+                url: prefix(sub.url),
+              }))
+            : [],
+          audioVersions: Array.isArray(d.audioVersions) ? (d.audioVersions as AudioVersionOption[]) : [],
+          seasonPacks: Array.isArray(d.seasonPacks) ? d.seasonPacks : [],
+        };
+      };
+
+      // Query same-origin Vercel API (for instant MovieBox multi-language dubs) and remote scraper in parallel
+      const [localResult, remoteResult] = await Promise.all([
+        fetchFromBase('').catch(() => null),
+        remoteScraper && !params.dubId
+          ? fetchFromBase(remoteScraper).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      const rawSources: MediaSource[] = [
+        ...(localResult?.sources || []),
+        ...(remoteResult?.sources || []),
+      ];
+      const combinedSubs = [
+        ...(localResult?.subtitles || []),
+        ...(remoteResult?.subtitles || []),
+      ];
+      const seenSubKeys = new Set<string>();
+      const uniqueSubs = combinedSubs.filter((s) => {
+        const key = `${String(s.label).toLowerCase()}_${String(s.lang).toLowerCase()}`;
+        if (!s.url || seenSubKeys.has(key)) return false;
+        seenSubKeys.add(key);
+        return true;
+      });
+      const audioVersions: AudioVersionOption[] =
+        (localResult?.audioVersions && localResult.audioVersions.length > 0
+          ? localResult.audioVersions
+          : remoteResult?.audioVersions) || [];
+
+      // Order by Original Audio first (when not requesting a dub), then resolution descending (1080p first), preferring MP4 over HLS
       rawSources.sort((a, b) => {
+        if (!params.dubId) {
+          const aDub = a.isDub ? 1 : 0;
+          const bDub = b.isDub ? 1 : 0;
+          if (aDub !== bDub) return aDub - bDub;
+        }
         const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
         if (resDiff !== 0) return resDiff;
         if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
@@ -472,16 +597,14 @@ export const backendApi = {
 
       return {
         sources: sortedSources,
-        subtitles: Array.isArray(data.subtitles)
-          ? data.subtitles.map((sub: { label: string; lang: string; url: string }) => ({
-              ...sub,
-              url: prefixUrl(sub.url),
-            }))
-          : [],
-        seasonPacks: Array.isArray(data.seasonPacks) ? data.seasonPacks : [],
+        subtitles: uniqueSubs,
+        audioVersions,
+        seasonPacks: localResult?.seasonPacks?.length
+          ? localResult.seasonPacks
+          : remoteResult?.seasonPacks || [],
       };
     } catch {
-      return { sources: [], subtitles: [], seasonPacks: [] };
+      return { sources: [], subtitles: [], audioVersions: [], seasonPacks: [] };
     }
   },
 

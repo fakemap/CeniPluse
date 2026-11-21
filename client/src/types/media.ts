@@ -11,15 +11,27 @@ export type NavRoute =
 
 export type MediaType = 'movie' | 'series' | 'animation';
 
+export interface AudioVersionOption {
+  subjectId: string;
+  detailPath: string;
+  lanName: string;
+  lanCode: string;
+  original: boolean;
+}
+
 export interface MediaSource {
   id: string;
   label: string;
-  quality: '4K' | '1080p' | '720p' | '480p' | string;
+  quality: '4K' | '1080p' | '720p' | '480p' | '360p' | string;
   type: 'hls' | 'mp4';
   size: string;
   codec?: string;
   url: string;
   downloadUrl?: string;
+  audioLang?: string;
+  audioLabel?: string;
+  isDub?: boolean;
+  audioTracks?: Array<{ lang: string; label: string }>;
   healthStatus?: string;
   lastCheckedAt?: string;
 }

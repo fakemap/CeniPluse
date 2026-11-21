@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import {
   ChevronRight,
+  ChevronDown,
   Play,
   Download,
   Smartphone,
@@ -26,6 +27,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type {
+  AudioVersionOption,
   CastMember,
   DownloadRecord,
   EpisodeItem,
@@ -34,7 +36,11 @@ import type {
   SeasonSummary,
   UserReviewItem,
 } from '../types/media';
-import { backendApi, mapTmdbToMediaItem } from '../services/api';
+import {
+  backendApi,
+  mapTmdbToMediaItem,
+  resolveOriginalAudioName,
+} from '../services/api';
 import {
   hasVidLinkSupport,
   isAnimeMedia,
@@ -140,6 +146,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const [isBufferingLong, setIsBufferingLong] = useState(false);
   const [hlsAudioTracks, setHlsAudioTracks] = useState<Array<{ id: number; name: string; lang: string }>>([]);
   const [activeHlsAudioIdx, setActiveHlsAudioIdx] = useState<number>(-1);
+  const [audioVersions, setAudioVersions] = useState<AudioVersionOption[]>([]);
+  const [selectedAudioVersion, setSelectedAudioVersion] = useState<AudioVersionOption | null>(null);
+  const [audioDropdownOpen, setAudioDropdownOpen] = useState<boolean>(false);
+  const audioDropdownRef = useRef<HTMLDivElement>(null);
 
   const [seasons, setSeasons] = useState<SeasonSummary[]>(item.seasons || []);
   const [selectedSeasonNum, setSelectedSeasonNum] = useState<number>(
@@ -197,6 +207,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
 
+  const originalAudioLabel = useMemo(() => {
+    const langName = resolveOriginalAudioName({
+      language: enriched.language,
+      country: enriched.country,
+      regionTag: enriched.regionTag,
+    });
+    return `Original (${langName})`;
+  }, [enriched.language, enriched.country, enriched.regionTag]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const heroSectionRef = useRef<HTMLElement>(null);
@@ -235,6 +254,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     setShowSubConfig(false);
     setScrapedSubtitles([]);
     setMycimaSeasonDownloads([]);
+    setAudioVersions([]);
+    setSelectedAudioVersion(null);
+    setAudioDropdownOpen(false);
     userPinnedEmbedRef.current = false;
     setEmbedProvider('vidlink');
 
@@ -294,6 +316,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
       const mergedSources = [...(det.boundSources || []), ...(item.sources || [])];
       const bestTrailer = det.trailerYoutubeId || item.trailerYoutubeId || '';
+      const resolvedOrigName = resolveOriginalAudioName({
+        language: det.language || item.language,
+        originCountry: det.originCountry,
+        country: det.country || item.country,
+        regionTag: det.regionTag || item.regionTag,
+      });
 
       setEnriched((prev) => ({
         ...prev,
@@ -301,6 +329,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         director: det.director || prev.director,
         releaseDate: det.releaseDate || prev.releaseDate,
         votes: det.votes ?? prev.votes,
+        country: det.country || prev.country,
+        regionTag: det.regionTag || prev.regionTag,
+        language: `Original (${resolvedOrigName})`,
         trailerYoutubeId: bestTrailer,
         videos: det.videos || [],
         recommendations: det.recommendations?.length
@@ -325,8 +356,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       setActiveSources((prev) => {
         const existingScraped = prev.filter((s) => s.id.startsWith('srv_'));
         if (existingScraped.length > 0) {
-          const maxNative = canAutoEmbed ? 3 : 4;
-          return [...mergedSources, ...existingScraped].slice(0, maxNative).map((s, idx) => ({
+          return [...mergedSources, ...existingScraped].slice(0, 4).map((s, idx) => ({
             ...s,
             label: `Server ${idx + 1} (${s.quality || '1080p'})`,
           }));
@@ -417,6 +447,17 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     };
   }, [enriched.type, enriched.tmdbId, enriched.seasons, selectedSeasonNum]);
 
+  useEffect(() => {
+    if (!audioDropdownOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (audioDropdownRef.current && !audioDropdownRef.current.contains(e.target as Node)) {
+        setAudioDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [audioDropdownOpen]);
+
   // Auto-resolve Ad-Free Native HLS/MP4 Streams & Subtitles (4texas4/movie-scraper + cinepro-org/core + yousefkotp)
   useEffect(() => {
     if (!enriched.tmdbId) return;
@@ -434,12 +475,24 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           episode: enriched.type === 'series' ? selectedEpNum : undefined,
           title: enriched.title,
           year: enriched.year,
+          dubId: selectedAudioVersion?.subjectId,
+          detailPath: selectedAudioVersion?.detailPath,
         },
         controller.signal
       )
       .then((res) => {
         if (!mounted || controller.signal.aborted) return;
         setResolvingStreams(false);
+
+        if (res.audioVersions && res.audioVersions.length > 0) {
+          setAudioVersions(res.audioVersions);
+          setSelectedAudioVersion((prev) => {
+            if (prev && res.audioVersions!.some((v) => v.subjectId === prev.subjectId)) {
+              return prev;
+            }
+            return res.audioVersions!.find((v) => v.original) || res.audioVersions![0];
+          });
+        }
 
         if (res.subtitles && res.subtitles.length > 0) {
           const sortedSubs = [...res.subtitles].sort((a, b) => {
@@ -454,6 +507,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         }
 
         if (res.sources && res.sources.length > 0) {
+          setActiveSourceIdx(0);
           setDownloadSources((prev) => {
             const existingCustom = prev.filter(
               (s) =>
@@ -479,10 +533,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 !s.id.startsWith('vidnest_') &&
                 !s.id.startsWith('cinesu_')
             );
-            // Deduplicate by resolution, preferring MP4 (Original English Audio) over HLS for the same resolution
+            // Deduplicate by resolution, preferring Original Audio (unless user picked a specific dub) and MP4 over HLS
             const seenQuals = new Set<string>();
             const dedupedFast: MediaSource[] = [];
             const sortedForStream = [...res.sources].sort((a, b) => {
+              if (!selectedAudioVersion || selectedAudioVersion.original) {
+                const aDub = a.isDub ? 1 : 0;
+                const bDub = b.isDub ? 1 : 0;
+                if (aDub !== bDub) return aDub - bDub;
+              }
               const pa = Number(String(a.quality || '').replace(/\D/g, '')) || 720;
               const pb = Number(String(b.quality || '').replace(/\D/g, '')) || 720;
               if (pb !== pa) return pb - pa;
@@ -496,14 +555,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 dedupedFast.push(s);
               }
             }
-            // Sort deduplicated servers by resolution descending so 1080p HD Ad-Free is always Server 1
+            // Sort deduplicated servers by resolution descending so 1080p HD Ad-Free is Server 1, 720p Server 2, 480p Server 3, 360p Server 4
             dedupedFast.sort((a, b) => {
               const pa = Number(String(a.quality || '').replace(/\D/g, '')) || 720;
               const pb = Number(String(b.quality || '').replace(/\D/g, '')) || 720;
               return pb - pa;
             });
-            const maxNative = canEmbedVidLink ? 3 : 4;
-            const merged = [...existingCustom, ...dedupedFast].slice(0, maxNative).map((s, idx) => ({
+            const merged = [...existingCustom, ...dedupedFast].slice(0, 4).map((s, idx) => ({
               ...s,
               label: `Server ${idx + 1} (${s.quality || '1080p'})`,
             }));
@@ -562,6 +620,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     enriched.year,
     selectedSeasonNum,
     selectedEpNum,
+    selectedAudioVersion?.subjectId,
+    selectedAudioVersion?.detailPath,
   ]);
 
   const currentSource = activeSources[activeSourceIdx] || activeSources[0];
@@ -599,7 +659,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         subLabel: '1080p',
       },
     ];
-    const countNeeded = Math.max(1, 4 - activeSources.length);
+    const countNeeded = Math.max(0, 4 - activeSources.length);
     return allCloud.slice(0, countNeeded);
   }, [canEmbedVidLink, activeSources.length, parsedMalId, animeAudioType]);
 
@@ -1823,42 +1883,96 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   ))}
                 </div>
 
-                {/* Audio Language Switcher + Anime Sub/Dub + External VTT Subtitles */}
+                {/* Audio Language Dropdown (Original Audio / English dub / French dub / Hindi dub / etc.) + Anime Sub/Dub + External VTT Subtitles */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {mode === 'stream' && (
-                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-[#141821] border border-white/10 px-2.5 py-1 min-h-[34px]">
-                      <Volume2 className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
-                      <span className="text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider">
-                        Audio:
-                      </span>
-                      {hlsAudioTracks.length > 1 ? (
-                        <div className="inline-flex items-center gap-1">
-                          {hlsAudioTracks.map((track) => (
-                            <button
-                              key={track.id}
-                              type="button"
-                              onClick={() => {
-                                if (hlsRef.current) {
-                                  hlsRef.current.audioTrack = track.id;
-                                  setActiveHlsAudioIdx(track.id);
-                                }
-                              }}
-                              className={`px-2 py-0.5 rounded text-[11px] font-extrabold uppercase transition-colors ${
-                                activeHlsAudioIdx === track.id
-                                  ? 'bg-[#00E5FF] text-[#071018]'
-                                  : 'text-[#CBD5E1] hover:text-[#F8FAFC]'
-                              }`}
-                            >
-                              {track.name}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded bg-[#10B981]/15 text-[#10B981] text-[11px] font-extrabold uppercase">
-                          {hlsAudioTracks[0]?.name || 'Original (English)'}
+                  {audioVersions.length > 0 ? (
+                    <div ref={audioDropdownRef} className="relative z-30">
+                      <button
+                        type="button"
+                        onClick={() => setAudioDropdownOpen((o) => !o)}
+                        className="min-h-[34px] px-3 rounded-lg bg-[#141821] hover:bg-[#1B212D] border border-white/15 hover:border-[#00E5FF]/50 text-xs font-extrabold text-[#F8FAFC] inline-flex items-center gap-2 transition-colors"
+                      >
+                        <Volume2 className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                        <span>
+                          {selectedAudioVersion?.lanName || originalAudioLabel}
                         </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-[#94A3B8] transition-transform duration-150 ${
+                            audioDropdownOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {audioDropdownOpen && (
+                        <div className="absolute right-0 sm:left-0 top-full mt-1.5 w-52 max-h-72 overflow-y-auto rounded-xl bg-[#11161F] border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] py-1.5 z-50">
+                          {audioVersions.map((ver) => {
+                            const isSelected =
+                              selectedAudioVersion?.subjectId === ver.subjectId;
+                            return (
+                              <button
+                                key={ver.subjectId}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedAudioVersion(ver);
+                                  setAudioDropdownOpen(false);
+                                  userPinnedEmbedRef.current = false;
+                                  setMode('stream');
+                                }}
+                                className={`w-full px-3.5 py-2 text-left text-xs font-bold flex items-center justify-between gap-2 transition-colors ${
+                                  isSelected
+                                    ? 'bg-[#10B981]/15 text-[#10B981]'
+                                    : 'text-[#CBD5E1] hover:bg-white/[0.07] hover:text-white'
+                                }`}
+                              >
+                                <span className="truncate">{ver.lanName}</span>
+                                {isSelected && (
+                                  <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
+                  ) : (
+                    mode === 'stream' && (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg bg-[#141821] border border-white/10 px-2.5 py-1 min-h-[34px]">
+                        <Volume2 className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                        <span className="text-[11px] font-bold text-[#94A3B8] uppercase tracking-wider">
+                          Audio:
+                        </span>
+                        {hlsAudioTracks.length > 1 ? (
+                          <div className="inline-flex items-center gap-1">
+                            {hlsAudioTracks.map((track) => (
+                              <button
+                                key={track.id}
+                                type="button"
+                                onClick={() => {
+                                  if (hlsRef.current) {
+                                    hlsRef.current.audioTrack = track.id;
+                                    setActiveHlsAudioIdx(track.id);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 rounded text-[11px] font-extrabold uppercase transition-colors ${
+                                  activeHlsAudioIdx === track.id
+                                    ? 'bg-[#00E5FF] text-[#071018]'
+                                    : 'text-[#CBD5E1] hover:text-[#F8FAFC]'
+                                }`}
+                              >
+                                {track.name}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-[#10B981]/15 text-[#10B981] text-[11px] font-extrabold uppercase">
+                            {hlsAudioTracks[0]?.name ||
+                              (currentSource?.audioLabel && currentSource.audioLabel !== 'Original Audio'
+                                ? currentSource.audioLabel
+                                : originalAudioLabel)}
+                          </span>
+                        )}
+                      </div>
+                    )
                   )}
 
                   {isAnime && (
@@ -2672,6 +2786,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           onSelectSeason={setSelectedSeasonNum}
           activeSources={downloadSources.length > 0 ? downloadSources : activeSources}
           scrapedSubtitles={scrapedSubtitles}
+          audioVersions={audioVersions}
+          selectedAudioVersion={selectedAudioVersion}
           onClose={() => setDownloadModalOpen(false)}
           onRequestTitle={handleRequestTitle}
           hasRequested={hasRequested}
