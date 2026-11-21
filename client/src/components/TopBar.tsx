@@ -10,11 +10,8 @@ import {
   Play,
   Film,
   Tv,
-  Globe,
-  Check,
 } from 'lucide-react';
 import type { MediaItem } from '../types/media';
-import { UI_LANGUAGES } from '../data/catalog';
 import { backendApi } from '../services/api';
 import { trackEvent } from '../services/analytics';
 import {
@@ -49,20 +46,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenModal,
   userEmail,
   premiumPlan = null,
-  uiLanguage,
-  onChangeLanguage,
   transparentOnTop = false,
   activeRoute = '',
 }) => {
   const [isFocused, setIsFocused] = useState(false);
-  const [mobileLangOpen, setMobileLangOpen] = useState(false);
   const [premiumHoverOpen, setPremiumHoverOpen] = useState(false);
   const [liveResults, setLiveResults] = useState<MediaItem[]>([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const mobileSearchContainerRef = useRef<HTMLDivElement>(null);
-  const langContainerRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<number | null>(null);
 
   const openPremiumHover = () => {
@@ -115,12 +108,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         mobileSearchContainerRef.current && mobileSearchContainerRef.current.contains(target);
       if (!inDesktopSearch && !inMobileSearch) {
         setIsFocused(false);
-      }
-      if (
-        langContainerRef.current &&
-        !langContainerRef.current.contains(target)
-      ) {
-        setMobileLangOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -206,14 +193,14 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onGoHome}
           className="flex items-center gap-1.5 md:gap-2 shrink-0 focus:outline-none py-1"
         >
-          <div className="w-7 h-7 md:w-8 md:h-8 rounded-[7px] md:rounded-lg bg-gradient-to-br from-[#00E5FF] via-[#0EA5E9] to-[#10B981] p-[1.5px]">
-            <div className="w-full h-full rounded-[5.5px] md:rounded-[7px] bg-[#0B0D12] flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 md:w-4 md:h-4 text-[#00E5FF]" fill="currentColor">
+          <div className="hidden md:block w-8 h-8 rounded-lg bg-gradient-to-br from-[#00E5FF] via-[#0EA5E9] to-[#10B981] p-[1.5px]">
+            <div className="w-full h-full rounded-[7px] bg-[#0B0D12] flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#00E5FF]" fill="currentColor">
                 <path d="M7.5 4.8a1.4 1.4 0 0 1 2.13-1.2l10.2 6.2a1.4 1.4 0 0 1 0 2.4l-10.2 6.2a1.4 1.4 0 0 1-2.13-1.2V4.8z" />
               </svg>
             </div>
           </div>
-          <span className="text-[14.5px] md:text-[1.18rem] font-extrabold tracking-tight text-[#F8FAFC]">
+          <span className="text-[16px] md:text-[1.18rem] font-extrabold tracking-tight text-[#F8FAFC]">
             Ceni<span className="text-[#00E5FF]">Pluse</span>
           </span>
         </button>
@@ -313,17 +300,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Right Controls: Mobile = App Download + Go Premium Crown + Language/Region Toggle + Profile Icon (Refined Compact Size) */}
-      <div className="flex md:hidden items-center gap-1.5 shrink-0">
-        <button
-          type="button"
-          onClick={() => onOpenModal('app')}
-          aria-label="Install App / Download"
-          className="w-8 h-8 rounded-full bg-[#10B981]/15 active:bg-[#10B981]/30 border border-[#10B981]/40 text-[#10B981] flex items-center justify-center shrink-0"
-        >
-          <Smartphone className="w-3.5 h-3.5" />
-        </button>
-
+      {/* Right Controls: Mobile = Go Premium Crown + Profile Icon (Clean Minimalist Header) */}
+      <div className="flex md:hidden items-center gap-2 shrink-0">
         <button
           type="button"
           onClick={() => onOpenModal('pro')}
@@ -332,39 +310,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <Crown className="w-3.5 h-3.5 fill-[#2B1907]" />
         </button>
-
-        <div ref={langContainerRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setMobileLangOpen((o) => !o)}
-            aria-label="Change language or region"
-            className="h-8 px-2 rounded-full bg-[#141821] active:bg-[#1E2430] border border-white/[0.08] flex items-center justify-center gap-1 text-[11px] font-bold text-[#F8FAFC] shrink-0"
-          >
-            <Globe className="w-3.5 h-3.5 text-[#00E5FF]" />
-            <span>{uiLanguage}</span>
-          </button>
-
-          {mobileLangOpen && (
-            <div className="absolute right-0 top-[38px] w-40 rounded-2xl bg-[#141821] border border-white/[0.12] shadow-2xl py-1.5 z-50 animate-modal">
-              {UI_LANGUAGES.map((lang) => (
-                <button
-                  key={lang.code}
-                  type="button"
-                  onClick={() => {
-                    onChangeLanguage(lang.code);
-                    setMobileLangOpen(false);
-                  }}
-                  className={`w-full min-h-[40px] px-3.5 text-left text-xs font-semibold flex items-center justify-between active:bg-[#1E2430] ${
-                    lang.code === uiLanguage ? 'text-[#00E5FF]' : 'text-[#F8FAFC]'
-                  }`}
-                >
-                  <span>{lang.label}</span>
-                  {lang.code === uiLanguage && <Check className="w-3.5 h-3.5" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
 
         <button
           type="button"
