@@ -147,6 +147,9 @@ async function probeMp4UrlReachable(rawUrl, referer, origin) {
     const totalBytes = res.headers.get('content-range')
       ? Number(String(res.headers.get('content-range')).split('/')[1] || 0)
       : Number(res.headers.get('content-length') || 0);
+    if (res.body && typeof res.body.cancel === 'function') {
+      res.body.cancel().catch(() => {});
+    }
     return { ok, status: res.status, totalBytes };
   } catch {
     return { ok: false, status: 0, totalBytes: 0 };
@@ -868,7 +871,7 @@ router.get('/resolve', async (req, res) => {
     }
   });
 
-  // Sort direct MP4 mirrors first, then HLS mirrors, ordered by resolution descending
+  // Sort fast low-latency HLS mirrors first, then direct MP4 mirrors, ordered by resolution descending
   const parseResScore = (q) => {
     const s = String(q || '').toLowerCase();
     if (s.includes('4k') || s.includes('2160')) return 2160;
@@ -876,7 +879,7 @@ router.get('/resolve', async (req, res) => {
     return m ? Number(m[1]) : 720;
   };
   rawSources.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'mp4' ? -1 : 1;
+    if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
     return parseResScore(b.quality) - parseResScore(a.quality);
   });
 
@@ -1733,6 +1736,13 @@ router.get('/proxy', async (req, res) => {
     if (upstream.headers['accept-ranges']) {
       res.setHeader('Accept-Ranges', upstream.headers['accept-ranges']);
     }
+    const cleanupUpstream = () => {
+      if (upstream && !upstream.destroyed && typeof upstream.destroy === 'function') {
+        upstream.destroy();
+      }
+    };
+    req.on('close', cleanupUpstream);
+    res.on('close', cleanupUpstream);
     upstream.pipe(res);
   } catch (err) {
     if (!res.headersSent) {

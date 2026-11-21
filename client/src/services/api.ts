@@ -445,14 +445,31 @@ export const backendApi = {
       const res = await fetch(`${scraperBase}/api/scraper/resolve?${qs.toString()}`, { signal });
       if (!res.ok) return { sources: [], subtitles: [], seasonPacks: [] };
       const data = await res.json();
+      const parseResScore = (q?: string) => {
+        const s = String(q || '').toLowerCase();
+        if (s.includes('4k') || s.includes('2160')) return 2160;
+        const m = s.match(/(\d{3,4})/);
+        return m ? Number(m[1]) : 720;
+      };
+      const rawSources: MediaSource[] = Array.isArray(data.sources)
+        ? data.sources.map((s: MediaSource) => ({
+            ...s,
+            url: prefixUrl(s.url),
+            downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
+          }))
+        : [];
+      // Prioritize fast low-latency HLS streams first (instant 1-2s playback start), then MP4 mirrors, ordered by resolution descending
+      rawSources.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
+        return parseResScore(b.quality) - parseResScore(a.quality);
+      });
+      const sortedSources = rawSources.map((s, idx) => ({
+        ...s,
+        label: `Server ${idx + 1} (${s.quality || '1080p'})`,
+      }));
+
       return {
-        sources: Array.isArray(data.sources)
-          ? data.sources.map((s: MediaSource) => ({
-              ...s,
-              url: prefixUrl(s.url),
-              downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
-            }))
-          : [],
+        sources: sortedSources,
         subtitles: Array.isArray(data.subtitles)
           ? data.subtitles.map((sub: { label: string; lang: string; url: string }) => ({
               ...sub,
