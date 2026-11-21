@@ -174,7 +174,7 @@ export const CATEGORY_CARDS: CategoryCardItem[] = [
     subtitle: 'Feel-Good Laughs',
     gradient: 'from-[#1A2010]/95 via-[#283015]/80 to-[#FACC15]/30',
     accentBorder: 'hover:border-yellow-400/60',
-    image: 'https://images.unsplash.com/photo-1543584756-8f93af48de05?w=700&q=75',
+    image: 'https://images.unsplash.com/photo-1514306191717-452ec28c7814?w=700&q=75',
     filterPatch: { genre: 'Comedy', regionShortcut: 'Comedy' },
   },
   {

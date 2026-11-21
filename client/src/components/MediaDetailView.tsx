@@ -136,6 +136,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const [activeSourceIdx, setActiveSourceIdx] = useState(0);
   const [activeEpisodeLabel, setActiveEpisodeLabel] = useState<string>('');
   const [streamError, setStreamError] = useState<string>('');
+  const [isBufferingLong, setIsBufferingLong] = useState(false);
 
   const [seasons, setSeasons] = useState<SeasonSummary[]>(item.seasons || []);
   const [selectedSeasonNum, setSelectedSeasonNum] = useState<number>(
@@ -174,6 +175,24 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   const [reviewRating, setReviewRating] = useState<number>(9);
   const [reviewText, setReviewText] = useState<string>('');
   const [submittingReview, setSubmittingReview] = useState(false);
+
+
+  const parsedMalId = useMemo(() => {
+    const num = Number(malIdOverride.trim());
+    return num > 0 ? Math.floor(num) : enriched.malId && Number(enriched.malId) > 0 ? Number(enriched.malId) : null;
+  }, [malIdOverride, enriched.malId]);
+
+  const canEmbedVidLink = useMemo(
+    () => hasVidLinkSupport(enriched) || Boolean(parsedMalId),
+    [enriched, parsedMalId]
+  );
+
+  const isUpcoming = useMemo(
+    () => isUpcomingMedia(enriched),
+    [enriched.releaseDate, enriched.year]
+  );
+
+  const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const heroSectionRef = useRef<HTMLElement>(null);
@@ -311,8 +330,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           setMode('trailer');
           setTrailerFullPlayer(true);
           setMuted(false);
+        } else if (canAutoEmbed) {
+          // Start with ultra-reliable VidLink Cloud mirror
+          setEmbedProvider('vidlink');
+          setMode('embed');
+          setMuted(false);
         } else {
-          // Always enter native ad-free stream mode first; auto-falls back to backup cloud only if 0 native servers resolve
           setMode('stream');
           setMuted(false);
         }
@@ -437,10 +460,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             return merged;
           });
 
-          // Auto-switch from iframe embed to 100% ad-free native player unless user explicitly pinned backup cloud
+          // Do not forcefully interrupt active playback if user is already streaming or embedded
           setMode((currentMode) => {
-            if (currentMode === 'embed' && !userPinnedEmbedRef.current && !malIdOverride.trim()) {
-              return 'stream';
+            if (currentMode === 'poster') {
+              return canEmbedVidLink ? 'embed' : 'stream';
             }
             return currentMode;
           });
@@ -500,6 +523,17 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     video.muted = muted;
     let hls: Hls | null = null;
     setStreamError('');
+    setIsBufferingLong(false);
+
+    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let bufferTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Show in-player helper if stream is still waiting/buffering after 3.5s
+    bufferTimer = setTimeout(() => {
+      if (video.currentTime < 0.5) {
+        setIsBufferingLong(true);
+      }
+    }, 3500);
 
     const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
     const savedSec = Number(localStorage.getItem(progressKey) || 0);
@@ -512,8 +546,18 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     };
 
     const handleFatalStreamFailure = () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      setIsBufferingLong(false);
+
       if (activeSourceIdx + 1 < activeSources.length) {
         setActiveSourceIdx((idx) => idx + 1);
+      } else if (canEmbedVidLink) {
+        // Direct scraped mirrors failed or timed out: auto-failover to VidLink Cloud!
+        userPinnedEmbedRef.current = true;
+        setEmbedProvider('vidlink');
+        setMode('embed');
+        setStreamError('');
       } else {
         setStreamError(
           'This stream mirror is currently unavailable. Try another quality or watch the official trailer.'
@@ -521,7 +565,28 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       }
     };
 
+    // 8-second watchdog: if playback has not started, auto-failover to next quality or cloud mirror
+    watchdogTimer = setTimeout(() => {
+      if (video.currentTime < 0.5 && (video.readyState < 3 || video.paused)) {
+        console.warn(
+          `[CeniPluse Stream Watchdog] Server ${activeSourceIdx + 1} stalled/timed out. Switching to next mirror...`
+        );
+        handleFatalStreamFailure();
+      }
+    }, 8000);
+
+    const onPlaySuccess = () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      setIsBufferingLong(false);
+      setStreamError('');
+    };
+
     const onTimeUpdate = () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      setIsBufferingLong(false);
+
       if (!isFinite(video.duration) || video.currentTime < 3) return;
       const now = Date.now();
       if (now - lastProgressSentRef.current < 5000) return;
@@ -537,6 +602,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       });
     };
 
+    video.addEventListener('playing', onPlaySuccess);
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('error', handleFatalStreamFailure);
 
@@ -569,6 +635,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
 
     return () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      if (bufferTimer) clearTimeout(bufferTimer);
+      video.removeEventListener('playing', onPlaySuccess);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('error', handleFatalStreamFailure);
       video.onloadedmetadata = null;
@@ -585,6 +654,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     currentSource,
     activeSourceIdx,
     activeSources.length,
+    canEmbedVidLink,
     enriched.id,
     enriched.title,
     enriched.backdrop,
@@ -602,22 +672,6 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
   }, [mode]);
 
-  const parsedMalId = useMemo(() => {
-    const num = Number(malIdOverride.trim());
-    return num > 0 ? Math.floor(num) : enriched.malId && Number(enriched.malId) > 0 ? Number(enriched.malId) : null;
-  }, [malIdOverride, enriched.malId]);
-
-  const canEmbedVidLink = useMemo(
-    () => hasVidLinkSupport(enriched) || Boolean(parsedMalId),
-    [enriched, parsedMalId]
-  );
-
-  const isUpcoming = useMemo(
-    () => isUpcomingMedia(enriched),
-    [enriched.releaseDate, enriched.year]
-  );
-
-  const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
 
   const savedStartAtSec = useMemo(() => {
     try {
@@ -1336,7 +1390,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   ref={videoRef}
                   controls
                   playsInline
-                  crossOrigin="anonymous"
+                  crossOrigin={externalSubUrl.trim() ? 'anonymous' : undefined}
                   className="w-full h-full object-contain bg-black"
                 >
                   {externalSubUrl.trim() && (
@@ -1359,6 +1413,26 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                     />
                   ))}
                 </video>
+
+                {isBufferingLong && !streamError && canEmbedVidLink && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#141821]/95 backdrop-blur-md border border-[#00E5FF]/40 shadow-2xl text-xs">
+                    <span className="text-[#94A3B8] font-medium hidden sm:inline">
+                      Direct server buffering slowly?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userPinnedEmbedRef.current = true;
+                        setEmbedProvider('vidlink');
+                        setMode('embed');
+                      }}
+                      className="px-2.5 py-0.5 rounded-full bg-[#00E5FF] text-[#071018] font-black text-[11px] hover:bg-[#00E5FF]/90 transition-all flex items-center gap-1 shadow-sm"
+                    >
+                      <Play className="w-2.5 h-2.5 fill-current" />
+                      Switch to Cloud Server (Server 7)
+                    </button>
+                  </div>
+                )}
                 {streamError && (
                   <div className="absolute inset-0 bg-[#0B0D12]/95 flex flex-col items-center justify-center p-6 text-center gap-3 z-10">
                     <p className="text-sm font-bold text-[#F8FAFC] max-w-md">{streamError}</p>
@@ -1588,7 +1662,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 1} (VidLink Cloud)`}
+                        <span>{`Server ${activeSources.length + 1} (VidLink Cloud)`}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-[#00E5FF]/20 text-[#00E5FF] text-[9px] font-black uppercase">
+                          Fast HD
+                        </span>
                       </button>
 
                       <button
@@ -1605,7 +1682,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 2} (VidSrc Stream)`}
+                        <span>{`Server ${activeSources.length + 2} (VidSrc Stream)`}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                          Cloud
+                        </span>
                       </button>
 
                       <button
@@ -1622,7 +1702,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 3} (AutoEmbed HD)`}
+                        <span>{`Server ${activeSources.length + 3} (AutoEmbed HD)`}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                          Multi
+                        </span>
                       </button>
 
                       <button
@@ -1639,7 +1722,10 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 4} (Backup Mirror)`}
+                        <span>{`Server ${activeSources.length + 4} (Backup Mirror)`}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                          Mirror
+                        </span>
                       </button>
                     </>
                   )}
@@ -2141,6 +2227,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                               ? `Server ${activeSources.length + 1} (${animeAudioType.toUpperCase()})`
                               : `Server ${activeSources.length + 1} (VidLink Cloud)`}
                           </span>
+                          <span className="px-1.5 py-0.5 rounded bg-[#00E5FF]/20 text-[#00E5FF] text-[9px] font-black uppercase">
+                            Fast HD
+                          </span>
                           <span className="text-[#94A3B8] font-normal">(1080p Auto)</span>
                         </button>
 
@@ -2160,6 +2249,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>{`Server ${activeSources.length + 2} (VidSrc Stream)`}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                            Cloud
+                          </span>
                           <span className="text-[#94A3B8] font-normal">(Fast HD)</span>
                         </button>
 
@@ -2179,6 +2271,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>{`Server ${activeSources.length + 3} (AutoEmbed HD)`}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                            Multi
+                          </span>
                           <span className="text-[#94A3B8] font-normal">(Multi)</span>
                         </button>
 
@@ -2198,6 +2293,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>{`Server ${activeSources.length + 4} (Backup Mirror)`}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[#94A3B8] text-[9px] font-bold uppercase">
+                            Mirror
+                          </span>
                           <span className="text-[#94A3B8] font-normal">(1080p)</span>
                         </button>
                       </>
