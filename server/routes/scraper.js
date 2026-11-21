@@ -885,7 +885,7 @@ router.get('/resolve', async (req, res) => {
     }
   });
 
-  // Sort fast low-latency HLS mirrors first, then direct MP4 mirrors, ordered by resolution descending
+  // Sort by resolution descending (1080p first), preferring HLS when two mirrors share the same resolution
   const parseResScore = (q) => {
     const s = String(q || '').toLowerCase();
     if (s.includes('4k') || s.includes('2160')) return 2160;
@@ -893,8 +893,10 @@ router.get('/resolve', async (req, res) => {
     return m ? Number(m[1]) : 720;
   };
   rawSources.sort((a, b) => {
+    const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
+    if (resDiff !== 0) return resDiff;
     if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
-    return parseResScore(b.quality) - parseResScore(a.quality);
+    return 0;
   });
 
   // Assign clean, white-labeled sequential names: "Server 1 (1080p)", "Server 2 (720p)", etc.

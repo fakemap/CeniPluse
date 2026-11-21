@@ -458,10 +458,12 @@ export const backendApi = {
             downloadUrl: s.downloadUrl ? prefixUrl(s.downloadUrl) : undefined,
           }))
         : [];
-      // Prioritize fast low-latency HLS streams first (instant 1-2s playback start), then MP4 mirrors, ordered by resolution descending
+      // Order by resolution descending (1080p first), preferring low-latency HLS when resolutions tie
       rawSources.sort((a, b) => {
+        const resDiff = parseResScore(b.quality) - parseResScore(a.quality);
+        if (resDiff !== 0) return resDiff;
         if (a.type !== b.type) return a.type === 'hls' ? -1 : 1;
-        return parseResScore(b.quality) - parseResScore(a.quality);
+        return 0;
       });
       const sortedSources = rawSources.map((s, idx) => ({
         ...s,

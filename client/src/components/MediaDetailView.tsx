@@ -322,7 +322,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       setActiveSources((prev) => {
         const existingScraped = prev.filter((s) => s.id.startsWith('srv_'));
         if (existingScraped.length > 0) {
-          const maxNative = canAutoEmbed ? 2 : 4;
+          const maxNative = canAutoEmbed ? 3 : 4;
           return [...mergedSources, ...existingScraped].slice(0, maxNative).map((s, idx) => ({
             ...s,
             label: `Server ${idx + 1} (${s.quality || '1080p'})`,
@@ -492,7 +492,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                 dedupedFast.push(s);
               }
             }
-            const maxNative = canEmbedVidLink ? 2 : 4;
+            // Sort deduplicated servers by resolution descending so 1080p HD Ad-Free is always Server 1
+            dedupedFast.sort((a, b) => {
+              const pa = Number(String(a.quality || '').replace(/\D/g, '')) || 720;
+              const pb = Number(String(b.quality || '').replace(/\D/g, '')) || 720;
+              return pb - pa;
+            });
+            const maxNative = canEmbedVidLink ? 3 : 4;
             const merged = [...existingCustom, ...dedupedFast].slice(0, maxNative).map((s, idx) => ({
               ...s,
               label: `Server ${idx + 1} (${s.quality || '1080p'})`,
