@@ -38,7 +38,6 @@ import { TrendingRankedView } from './components/TrendingRankedView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GridSkeleton, HeroSkeleton, RailSkeleton } from './components/SkeletonLoaders';
 import { SponsoredBanner } from './components/SponsoredBanner';
-import { MediaDetailView } from './components/MediaDetailView';
 import {
   fetchPublicMonetizationConfig,
   fetchSubscriptionStatus,
@@ -46,9 +45,12 @@ import {
   type MonetizationConfig,
 } from './services/analytics';
 
-// Code-split admin studio only; MediaDetailView is bundled directly for instant 0ms opens & zero stale-chunk errors on iOS/mobile
+// Lazy-load heavy views so the initial homepage bundle stays small and fast on mobile
 const AdminPortalView = lazy(() =>
   import('./components/AdminPortalView').then((m) => ({ default: m.AdminPortalView }))
+);
+const MediaDetailView = lazy(() =>
+  import('./components/MediaDetailView').then((m) => ({ default: m.MediaDetailView }))
 );
 
 const VALID_ROUTES = new Set<NavRoute>([

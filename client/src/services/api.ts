@@ -550,13 +550,16 @@ export const backendApi = {
         };
       };
 
-      // Query same-origin Vercel API (for instant MovieBox multi-language dubs) and remote scraper in parallel
-      const [localResult, remoteResult] = await Promise.all([
-        fetchFromBase('').catch(() => null),
-        remoteScraper && !params.dubId
-          ? fetchFromBase(remoteScraper).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      // Query same-origin Vercel API first (instant MovieBox multi-language + OpenSubtitles).
+      // Only fall back to remote Bot-Hosting /resolve if same-origin returns 0 sources (avoids slow dual calls & stale Italian dubs).
+      const localResult = await fetchFromBase('').catch(() => null);
+      const shouldFallbackRemote =
+        Boolean(remoteScraper) &&
+        !params.dubId &&
+        (!localResult || localResult.sources.length === 0);
+      const remoteResult = shouldFallbackRemote
+        ? await fetchFromBase(remoteScraper).catch(() => null)
+        : null;
 
       const rawSources: MediaSource[] = [
         ...(localResult?.sources || []),

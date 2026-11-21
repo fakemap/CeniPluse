@@ -4,7 +4,7 @@ const { DB_PATH, DEFAULT_MEDIA_DIR, ENV_TMDB_API_KEY } = require('../config');
 const { createSeedData } = require('./seed');
 const supabaseClient = require('./supabaseClient');
 
-const SYNC_TTL_MS = 30 * 1000;
+const SYNC_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL to avoid hammering Supabase on every request
 
 const STATE_KEY_TO_FIELD = {
   settings: 'settings',
@@ -157,7 +157,9 @@ class JsonStore {
 
         this.cloudLoaded = true;
         this.lastSyncedAt = Date.now();
-        this.save();
+        if (!process.env.VERCEL) {
+          this.save();
+        }
       } finally {
         this.syncPromise = null;
       }

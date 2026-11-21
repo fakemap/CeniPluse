@@ -1354,8 +1354,15 @@ router.get('/resolve', async (req, res) => {
     requestedDetailPath,
   };
 
-  // When a specific MovieBox dub/sub version is selected, resolve that exact audio version directly
+  // Run fast, live-working engines in parallel.
+  // On Vercel serverless, skip blocked/timing-out scrapers (mycima.tube, vidrock.net, cine.su) to cut latency from ~5.8s to ~1.5s!
+  const isVercel = Boolean(process.env.VERCEL);
   const tasks = requestedDubId
+    ? [
+        scrapeMovieBoxMultiLang(context),
+        ...(tmdbId ? [fetchExactOpenSubtitles(context)] : []),
+      ]
+    : isVercel
     ? [
         scrapeMovieBoxMultiLang(context),
         ...(tmdbId ? [fetchExactOpenSubtitles(context)] : []),
@@ -1366,8 +1373,6 @@ router.get('/resolve', async (req, res) => {
           ? [
               scrapeEngineOne(context),
               scrapeEngineFour(context),
-              scrapeEngineTwo(context),
-              scrapeEngineSix(context),
               fetchExactOpenSubtitles(context),
             ]
           : []),
@@ -1375,7 +1380,7 @@ router.get('/resolve', async (req, res) => {
 
   const [providerResults, archiveResult] = await Promise.all([
     Promise.allSettled(tasks),
-    title && type === 'tv'
+    !isVercel && title && type === 'tv'
       ? scrapeSeasonArchives(context)
       : Promise.resolve({ seasonDownloads: [] }),
   ]);
@@ -1443,14 +1448,51 @@ router.get('/resolve', async (req, res) => {
     };
   });
 
-  // Deduplicate subtitles by label + lang
+  // Normalize and deduplicate subtitles by canonical language so duplicates like "العربية" & "اَلْعَرَبِيَّةُ" or numeric lang IDs collapse cleanly
+  const normalizeSubCanonical = (s) => {
+    const lbl = String(s.label || '').trim().toLowerCase();
+    const code = String(s.lang || '').trim().toLowerCase();
+    if (/english|^en\b/.test(lbl) || code === 'en' || code === 'eng') return { key: 'en', label: 'English', lang: 'en' };
+    if (/español|spanish|^es\b/.test(lbl) || code === 'es' || code === 'spa') return { key: 'es', label: 'Español', lang: 'es' };
+    if (/français|french|^fr\b/.test(lbl) || code === 'fr' || code === 'fra' || code === 'fre') return { key: 'fr', label: 'Français', lang: 'fr' };
+    if (/العربية|اَلْعَرَبِيَّةُ|arabic|^ar\b/.test(lbl) || code === 'ar' || code === 'ara') return { key: 'ar', label: 'العربية (Arabic)', lang: 'ar' };
+    if (/português|portuguese|^pt\b/.test(lbl) || code === 'pt' || code === 'por') return { key: 'pt', label: 'Português', lang: 'pt' };
+    if (/deutsch|german|^de\b/.test(lbl) || code === 'de' || code === 'deu' || code === 'ger') return { key: 'de', label: 'Deutsch', lang: 'de' };
+    if (/italiano|italian|^it\b/.test(lbl) || code === 'it' || code === 'ita') return { key: 'it', label: 'Italiano', lang: 'it' };
+    if (/русский|russian|^ru\b/.test(lbl) || code === 'ru' || code === 'rus') return { key: 'ru', label: 'Русский', lang: 'ru' };
+    if (/한국어|korean|^ko\b/.test(lbl) || code === 'ko' || code === 'kor') return { key: 'ko', label: '한국어 (Korean)', lang: 'ko' };
+    if (/日本語|japanese|^ja\b/.test(lbl) || code === 'ja' || code === 'jp' || code === 'jpn') return { key: 'ja', label: '日本語 (Japanese)', lang: 'ja' };
+    if (/हिन्दी|hindi|^hi\b/.test(lbl) || code === 'hi' || code === 'hin') return { key: 'hi', label: 'हिन्दी (Hindi)', lang: 'hi' };
+    if (/indonesian|bahasa indonesia|^id\b/.test(lbl) || code === 'id' || code === 'in') return { key: 'id', label: 'Indonesian', lang: 'id' };
+    if (/türkçe|turkish|^tr\b/.test(lbl) || code === 'tr' || code === 'tu' || code === 'tur') return { key: 'tr', label: 'Türkçe', lang: 'tr' };
+    if (/中文|chinese|^zh\b/.test(lbl) || code === 'zh' || code === 'chi' || code === 'zho') return { key: 'zh', label: '中文 (Chinese)', lang: 'zh' };
+    if (/tiếng việt|vietnamese|^vi\b/.test(lbl) || code === 'vi' || code === 'vie') return { key: 'vi', label: 'Tiếng Việt', lang: 'vi' };
+    if (/filipino|tagalog|^tl\b/.test(lbl) || code === 'tl' || code === 'fil') return { key: 'tl', label: 'Filipino', lang: 'tl' };
+    if (/nederlands|dutch|^nl\b/.test(lbl) || code === 'nl' || code === 'dut') return { key: 'nl', label: 'Nederlands', lang: 'nl' };
+    if (/polski|polish|^pl\b/.test(lbl) || code === 'pl' || code === 'po' || code === 'pol') return { key: 'pl', label: 'Polski', lang: 'pl' };
+    if (/বাংলা|bengali|^bn\b/.test(lbl) || code === 'bn' || code === 'ben') return { key: 'bn', label: 'বাংলা (Bengali)', lang: 'bn' };
+    if (/اُردُو|urdu|^ur\b/.test(lbl) || code === 'ur' || code === 'urd') return { key: 'ur', label: 'اُردُو (Urdu)', lang: 'ur' };
+    return {
+      key: lbl || code,
+      label: s.label || 'Subtitle',
+      lang: /^[a-z]{2}$/.test(code) ? code : 'en',
+    };
+  };
+
   const seenSubKeys = new Set();
-  const uniqueSubtitles = subtitles.filter((s) => {
-    const key = `${String(s.label).toLowerCase()}_${String(s.lang).toLowerCase()}`;
-    if (!s.url || seenSubKeys.has(key)) return false;
-    seenSubKeys.add(key);
-    return true;
-  });
+  const uniqueSubtitles = [];
+  for (const s of subtitles) {
+    if (!s || !s.url) continue;
+    const norm = normalizeSubCanonical(s);
+    if (seenSubKeys.has(norm.key)) continue;
+    seenSubKeys.add(norm.key);
+    uniqueSubtitles.push({
+      label: norm.label,
+      lang: norm.lang,
+      url: s.url,
+    });
+  }
+  uniqueSubtitles.sort((a, b) => (a.lang === 'en' ? -1 : b.lang === 'en' ? 1 : a.label.localeCompare(b.label)));
 
   const payload = {
     tmdbId: tmdbId ? Number(tmdbId) : null,
@@ -2154,6 +2196,28 @@ function convertTextToVtt(rawText) {
   return text;
 }
 
+const ALLOWED_RAW_PROXY_HOSTS = [
+  'hakunaymatata.com',
+  'vixcloud.co',
+  'vixsrc.to',
+  'strem.io',
+  'vdrk.site',
+  'vidlink.pro',
+  'filmboom.top',
+  'aoneroom.com',
+];
+
+function isAllowedRawProxyHost(rawUrl) {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    return ALLOWED_RAW_PROXY_HOSTS.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 router.get('/proxy', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader(
@@ -2175,6 +2239,9 @@ router.get('/proxy', async (req, res) => {
     if (decoded.o) origin = String(decoded.o).trim();
   } else if (req.query.url) {
     rawUrl = String(req.query.url).trim();
+    if (!isAllowedRawProxyHost(rawUrl)) {
+      return res.status(403).json({ error: 'Unauthorized proxy target host' });
+    }
     if (req.query.referer) referer = String(req.query.referer).trim();
     if (req.query.origin) origin = String(req.query.origin).trim();
   }
