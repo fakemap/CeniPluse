@@ -47,8 +47,23 @@ function decryptProxyPayload(token) {
   }
 }
 
+const STREAM_PROXY_ORIGIN = String(
+  process.env.STREAM_PROXY_ORIGIN ||
+    (process.env.VERCEL ? 'https://fjiklhy643.apps.bot-hosting.cloud' : '')
+)
+  .trim()
+  .replace(/\/+$/, '');
+
 function buildProxyUrl(targetUrl, referer = '', origin = '') {
   if (!targetUrl || typeof targetUrl !== 'string') return '';
+  // When running on Vercel serverless (whose AWS IPs get 426 Forbidden from hakunaymatata CDN),
+  // route media/subtitle proxying through the Bot-Hosting residential/non-AWS proxy!
+  if (STREAM_PROXY_ORIGIN && !targetUrl.startsWith('/')) {
+    const qs = new URLSearchParams({ url: targetUrl });
+    if (referer) qs.set('referer', referer);
+    if (origin) qs.set('origin', origin);
+    return `${STREAM_PROXY_ORIGIN}/api/scraper/proxy?${qs.toString()}`;
+  }
   const token = encryptProxyPayload({
     u: targetUrl,
     r: referer || '',
