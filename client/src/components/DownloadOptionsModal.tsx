@@ -29,7 +29,8 @@ import {
   downloadVideoWithProgress,
   type DownloadProgress,
 } from '../utils/downloader';
-import { trackEvent } from '../services/analytics';
+import { trackEvent, type MonetizationConfig } from '../services/analytics';
+import { AdSlot } from './AdSlot';
 
 interface DownloadOptionsModalProps {
   item: MediaItem;
@@ -42,6 +43,10 @@ interface DownloadOptionsModalProps {
   scrapedSubtitles?: Array<{ label: string; lang: string; url: string }>;
   audioVersions?: AudioVersionOption[];
   selectedAudioVersion?: AudioVersionOption | null;
+  monetizationConfig?: MonetizationConfig | null;
+  hasActiveSubscription?: boolean;
+  premiumPlan?: string | null;
+  onOpenPremium?: () => void;
   onClose: () => void;
   onRequestTitle: () => void;
   hasRequested: boolean;
@@ -93,6 +98,10 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   scrapedSubtitles = [],
   audioVersions = [],
   selectedAudioVersion = null,
+  monetizationConfig = null,
+  hasActiveSubscription = false,
+  premiumPlan = null,
+  onOpenPremium,
   onClose,
   onRequestTitle,
   hasRequested,
@@ -880,6 +889,16 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Ad Slot 3: Download Modal Banner (Hidden for Premium Subscribers) */}
+          <AdSlot
+            config={monetizationConfig}
+            premiumPlan={premiumPlan}
+            hasActiveSubscription={hasActiveSubscription}
+            slot="download"
+            placement="download_modal"
+            onOpenPremium={() => onOpenPremium?.()}
+          />
 
           {/* Section 1B: Select Audio Language (Original vs Dubbed) */}
           <div className="space-y-2.5">

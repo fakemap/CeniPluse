@@ -1298,6 +1298,111 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
                   </label>
                 </div>
 
+                {/* Live Ad Network Zones (Adsterra, Monetag, HilltopAds, Direct Sponsor) */}
+                <div className="pt-3 border-t border-white/[0.08] space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-[#00E5FF] uppercase tracking-wider">
+                      Live Ad Network Codes (Adsterra / Monetag / HilltopAds)
+                    </span>
+                    <span className="text-[10px] font-bold text-[#94A3B8]">
+                      Hidden for Premium
+                    </span>
+                  </div>
+
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-[#94A3B8]">
+                      Home Feed Banner Code (728x90 / Native Banner HTML or &lt;script&gt;)
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={monetCfg.homeBannerCode || ''}
+                      onChange={(e) => setMonetCfg({ ...monetCfg, homeBannerCode: e.target.value })}
+                      placeholder="Paste Adsterra / Monetag Native or Display Banner snippet here..."
+                      className="w-full p-2.5 rounded-lg bg-[#0B0D12] border border-white/10 text-[11px] font-mono text-[#CBD5E1] outline-none focus:border-[#00E5FF]"
+                    />
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-[#94A3B8]">
+                      Below-Player Banner Code (Shown under Video Player on Movie/Series pages)
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={monetCfg.playerBannerCode || ''}
+                      onChange={(e) => setMonetCfg({ ...monetCfg, playerBannerCode: e.target.value })}
+                      placeholder="Paste Adsterra / Monetag Responsive Banner snippet here..."
+                      className="w-full p-2.5 rounded-lg bg-[#0B0D12] border border-white/10 text-[11px] font-mono text-[#CBD5E1] outline-none focus:border-[#00E5FF]"
+                    />
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold text-[#94A3B8]">
+                      Download Modal Banner Code (320x50 / Native Banner inside Download dialog)
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={monetCfg.downloadBannerCode || ''}
+                      onChange={(e) => setMonetCfg({ ...monetCfg, downloadBannerCode: e.target.value })}
+                      placeholder="Paste compact banner snippet for Download Options modal..."
+                      className="w-full p-2.5 rounded-lg bg-[#0B0D12] border border-white/10 text-[11px] font-mono text-[#CBD5E1] outline-none focus:border-[#00E5FF]"
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-bold text-[#94A3B8]">
+                        Global Script URL (Social Bar / In-Page Push)
+                      </span>
+                      <input
+                        type="url"
+                        value={monetCfg.globalAdScriptUrl || ''}
+                        onChange={(e) => setMonetCfg({ ...monetCfg, globalAdScriptUrl: e.target.value })}
+                        placeholder="https://pl12345.effectivegatecpm.com/..."
+                        className="w-full min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC] outline-none focus:border-[#00E5FF]"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-bold text-[#94A3B8]">
+                        Direct Link / Smartlink URL (Optional)
+                      </span>
+                      <input
+                        type="url"
+                        value={monetCfg.smartlinkUrl || ''}
+                        onChange={(e) => setMonetCfg({ ...monetCfg, smartlinkUrl: e.target.value })}
+                        placeholder="https://adsterra-smartlink-url..."
+                        className="w-full min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC] outline-none focus:border-[#00E5FF]"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-bold text-[#94A3B8]">
+                        Direct Sponsor Image URL (Home Slot)
+                      </span>
+                      <input
+                        type="url"
+                        value={monetCfg.bannerImageUrl || ''}
+                        onChange={(e) => setMonetCfg({ ...monetCfg, bannerImageUrl: e.target.value })}
+                        placeholder="https://.../banner-728x90.jpg"
+                        className="w-full min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC] outline-none focus:border-[#00E5FF]"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-[11px] font-bold text-[#94A3B8]">
+                        Direct Sponsor Image URL (Player Slot)
+                      </span>
+                      <input
+                        type="url"
+                        value={monetCfg.secondAdImageUrl || ''}
+                        onChange={(e) => setMonetCfg({ ...monetCfg, secondAdImageUrl: e.target.value })}
+                        placeholder="https://.../player-banner.jpg"
+                        className="w-full min-h-[38px] px-3 rounded-lg bg-[#0B0D12] border border-white/10 text-xs text-[#F8FAFC] outline-none focus:border-[#00E5FF]"
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   disabled={savingMonet}

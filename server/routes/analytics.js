@@ -45,6 +45,14 @@ const DEFAULT_MONETIZATION_CONFIG = {
   secondAdSubtitle: 'Upgrade to CeniPluse Premium for instant access to every movie, series & subtitle.',
   secondAdCtaText: 'Go Premium',
   secondAdLinkUrl: '',
+  // Live Ad Network Zones (Adsterra, Monetag, HilltopAds, Direct Sponsor)
+  homeBannerCode: '',
+  playerBannerCode: '',
+  downloadBannerCode: '',
+  globalAdScriptUrl: '',
+  smartlinkUrl: '',
+  bannerImageUrl: '',
+  secondAdImageUrl: '',
   ecpmGhs: 18.0,
   paymentGateway: 'paystack',
   paystackPublicKey: '',
@@ -815,6 +823,27 @@ router.put('/admin/monetization-config', requireAdminAuth, (req, res) => {
   }
   if (typeof b.secondAdLinkUrl === 'string') {
     patch.secondAdLinkUrl = sanitizeString(b.secondAdLinkUrl, 300);
+  }
+  if (typeof b.homeBannerCode === 'string') {
+    patch.homeBannerCode = b.homeBannerCode.trim().slice(0, 4000);
+  }
+  if (typeof b.playerBannerCode === 'string') {
+    patch.playerBannerCode = b.playerBannerCode.trim().slice(0, 4000);
+  }
+  if (typeof b.downloadBannerCode === 'string') {
+    patch.downloadBannerCode = b.downloadBannerCode.trim().slice(0, 4000);
+  }
+  if (typeof b.globalAdScriptUrl === 'string') {
+    patch.globalAdScriptUrl = sanitizeString(b.globalAdScriptUrl, 500);
+  }
+  if (typeof b.smartlinkUrl === 'string') {
+    patch.smartlinkUrl = sanitizeString(b.smartlinkUrl, 500);
+  }
+  if (typeof b.bannerImageUrl === 'string') {
+    patch.bannerImageUrl = sanitizeString(b.bannerImageUrl, 500);
+  }
+  if (typeof b.secondAdImageUrl === 'string') {
+    patch.secondAdImageUrl = sanitizeString(b.secondAdImageUrl, 500);
   }
   if (b.ecpmGhs !== undefined && !Number.isNaN(Number(b.ecpmGhs))) {
     patch.ecpmGhs = Math.max(0, Number(b.ecpmGhs));

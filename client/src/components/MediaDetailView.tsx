@@ -53,7 +53,7 @@ import {
 } from '../utils/vidlink';
 import { DownloadOptionsModal } from './DownloadOptionsModal';
 import { SnippetPlayer } from './SnippetPlayer';
-import { SponsoredBanner } from './SponsoredBanner';
+import { AdSlot } from './AdSlot';
 import { trackEvent, type MonetizationConfig } from '../services/analytics';
 
 interface MediaDetailViewProps {
@@ -2087,12 +2087,13 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
         </section>
       )}
 
-      {/* Double Ad Slot 2 (Visible only for non-subscribers when Ads are enabled) */}
-      <SponsoredBanner
+      {/* Ad Slot 2: Below Video Player Banner (Visible only for non-subscribers when Ads are enabled) */}
+      <AdSlot
         config={monetizationConfig}
-        premiumPlan={hasActiveSubscription ? premiumPlan || 'active' : null}
-        slot="secondary"
-        placement="media_detail_top"
+        premiumPlan={premiumPlan}
+        hasActiveSubscription={hasActiveSubscription}
+        slot="player"
+        placement="media_detail_player"
         onOpenPremium={() =>
           onRequireSubscription?.(
             'Go 100% Ad-Free and unlock unlimited HD streaming & downloads with CeniPluse Premium.'
@@ -2788,6 +2789,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
           scrapedSubtitles={scrapedSubtitles}
           audioVersions={audioVersions}
           selectedAudioVersion={selectedAudioVersion}
+          monetizationConfig={monetizationConfig}
+          hasActiveSubscription={hasActiveSubscription}
+          premiumPlan={premiumPlan}
+          onOpenPremium={() => {
+            setDownloadModalOpen(false);
+            onRequireSubscription?.(
+              'Go 100% Ad-Free and unlock unlimited HD streaming & downloads with CeniPluse Premium.'
+            );
+          }}
           onClose={() => setDownloadModalOpen(false)}
           onRequestTitle={handleRequestTitle}
           hasRequested={hasRequested}

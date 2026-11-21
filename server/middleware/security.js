@@ -55,13 +55,15 @@ function securityHeaders(req, res, next) {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com data:",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+      "style-src 'self' 'unsafe-inline' https:",
+      "font-src 'self' https: data:",
       "img-src 'self' https: http: data: blob:",
       "media-src 'self' https: http: blob:",
       "connect-src 'self' https: http: wss:",
-      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://vidlink.pro https://*.vidlink.pro https://vidsrc.cc https://*.vidsrc.cc https://player.autoembed.cc https://*.autoembed.cc https://vidsrc.xyz https://*.vidsrc.xyz https://vidsrc.in https://*.vidsrc.in https://vidsrc.pm https://*.vidsrc.pm https://vidsrc.net https://*.vidsrc.net https://2embed.cc https://*.2embed.cc",
+      "frame-src 'self' https:",
+      "object-src 'none'",
+      "base-uri 'self'",
       "worker-src 'self' blob:",
     ].join('; ')
   );

@@ -37,7 +37,8 @@ import { MobileSearchView } from './components/MobileSearchView';
 import { TrendingRankedView } from './components/TrendingRankedView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GridSkeleton, HeroSkeleton, RailSkeleton } from './components/SkeletonLoaders';
-import { SponsoredBanner } from './components/SponsoredBanner';
+import { AdSlot } from './components/AdSlot';
+import { GlobalAdLoader } from './components/GlobalAdLoader';
 import {
   fetchPublicMonetizationConfig,
   fetchSubscriptionStatus,
@@ -1266,9 +1267,11 @@ export const App: React.FC = () => {
             onToggleWatchlist={handleToggleWatchlist}
           />
 
-          <SponsoredBanner
+          <AdSlot
             config={monetizationConfig}
             premiumPlan={premiumPlan}
+            hasActiveSubscription={hasActiveSubscription}
+            slot="home"
             placement="home_mid"
             onOpenPremium={() => setActiveModal('pro')}
           />
@@ -2005,6 +2008,12 @@ export const App: React.FC = () => {
           renderPage()
         )}
       </AppShell>
+
+      <GlobalAdLoader
+        config={monetizationConfig}
+        hasActiveSubscription={hasActiveSubscription}
+        isAdminRoute={activeRoute === 'admin'}
+      />
 
       <ActionModals
         modal={activeModal}

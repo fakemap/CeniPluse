@@ -42,6 +42,13 @@ export interface MonetizationConfig {
   secondAdSubtitle?: string;
   secondAdCtaText?: string;
   secondAdLinkUrl?: string;
+  homeBannerCode?: string;
+  playerBannerCode?: string;
+  downloadBannerCode?: string;
+  globalAdScriptUrl?: string;
+  smartlinkUrl?: string;
+  bannerImageUrl?: string;
+  secondAdImageUrl?: string;
   ecpmGhs?: number;
   paymentGateway?: string;
   paystackPublicKey?: string;
