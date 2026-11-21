@@ -1005,33 +1005,81 @@ async function scrapeMovieBoxMultiLang({
       const items = Array.isArray(searchJson?.data?.items) ? searchJson.data.items : [];
       if (items.length === 0) return { sources: [], subtitles: [], audioVersions: [] };
 
-      const norm = (s) =>
+      // Strip brackets ("[Full episode]", "[Version française]") and trailing season tags ("S1-S3", "S3", "Season 2")
+      const stripSeasonAndTags = (s) =>
         String(s || '')
+          .replace(/\[[^\]]*\]/g, ' ')
+          .replace(/\b(?:s\d+(?:\s*-\s*s?\d+)?|season\s*\d+(?:\s*-\s*\d+)?)\b/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const norm = (s) =>
+        stripSeasonAndTags(s)
           .toLowerCase()
-          .replace(/\[[^\]]*\]/g, '')
           .replace(/[^a-z0-9]+/g, '')
           .trim();
+      const toWordSet = (s) =>
+        new Set(
+          stripSeasonAndTags(s)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+        );
+
       const targetNorm = norm(searchTitle);
+      const targetWords = toWordSet(searchTitle);
       const wantType = type === 'tv' ? 2 : 1;
 
       const scored = items
         .filter((it) => it && it.subjectId && it.detailPath)
         .map((it) => {
-          let score = 0;
-          const itNorm = norm(it.title);
-          const isBracketDub = /\[[^\]]+\]/.test(String(it.title || ''));
-          if (it.subjectType === wantType) score += 50;
-          if (itNorm === targetNorm) score += 40;
-          else if (itNorm.startsWith(targetNorm) || targetNorm.startsWith(itNorm)) score += 20;
-          if (!isBracketDub) score += 15; // Prefer original main entry over "[English]" duplicate
+          const rawTitle = String(it.title || '');
+          const itNorm = norm(rawTitle);
+          const itWords = toWordSet(rawTitle);
+
+          // Strict title match requirement: reject unrelated titles (e.g. "Fatal Seduction" when searching "Beauty in Black")
+          let titleScore = 0;
+          if (itNorm === targetNorm) {
+            titleScore = 200;
+          } else if (
+            targetNorm.length >= 4 &&
+            (itNorm.startsWith(targetNorm) || targetNorm.startsWith(itNorm))
+          ) {
+            titleScore = 140;
+          } else if (targetWords.size > 0 && itWords.size > 0) {
+            let overlap = 0;
+            for (const w of targetWords) {
+              if (itWords.has(w)) overlap++;
+            }
+            const ratio = overlap / Math.max(targetWords.size, itWords.size);
+            if (ratio >= 0.75) {
+              titleScore = Math.round(120 * ratio);
+            }
+          }
+
+          if (titleScore === 0) {
+            return { it, score: -1 };
+          }
+
+          let score = titleScore;
+          if (it.subjectType === wantType) score += 60;
+
+          // Penalize foreign-language bracketed dubs ("[Version française]", "[English]", "[Hindi]") unless no main entry exists
+          const isForeignDubTitle = /\[(?:english|french|version|français|spanish|español|hindi|arabic|russian|tamil|telugu|portuguese|indonesian|dub|sub)[^\]]*\]/i.test(
+            rawTitle
+          );
+          if (!isForeignDubTitle) score += 25;
+
           const itYear = String(it.releaseDate || '').slice(0, 4);
           if (searchYear && itYear) {
             const diff = Math.abs(Number(itYear) - Number(searchYear));
             if (diff === 0) score += 30;
-            else if (diff === 1) score += 15;
+            else if (diff <= 2) score += 15;
           }
           return { it, score };
         })
+        .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score);
 
       if (scored.length === 0) return { sources: [], subtitles: [], audioVersions: [] };
