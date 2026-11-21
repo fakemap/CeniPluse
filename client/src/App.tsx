@@ -542,21 +542,108 @@ export const App: React.FC = () => {
       requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }));
     }
 
+    const setMetaTag = (selector: string, attr: string, value: string) => {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute(attr, value);
+    };
+
     if (selectedMedia?.item) {
-      document.title = `${selectedMedia.item.title} (${selectedMedia.item.year}) — CeniPluse`;
+      const item = selectedMedia.item;
+      const mediaTitle = `${item.title} (${item.year}) — Watch Free in HD on CeniPluse`;
+      const mediaDesc = item.overview
+        ? item.overview.slice(0, 160)
+        : `Watch ${item.title} (${item.year}) online in full HD. Stream and download free on CeniPluse.`;
+      const mediaUrl = `https://www.cenipluse.xyz/?title=${encodeURIComponent(item.id)}`;
+
+      document.title = mediaTitle;
+      setMetaTag('meta[name="description"]', 'content', mediaDesc);
+      setMetaTag('meta[property="og:title"]', 'content', mediaTitle);
+      setMetaTag('meta[property="og:description"]', 'content', mediaDesc);
+      setMetaTag('meta[property="og:url"]', 'content', mediaUrl);
+      if (item.poster || item.backdrop) {
+        setMetaTag('meta[property="og:image"]', 'content', item.backdrop || item.poster);
+        setMetaTag('meta[name="twitter:image"]', 'content', item.backdrop || item.poster);
+      }
+      setMetaTag('link[rel="canonical"]', 'href', mediaUrl);
+
+      // Inject structured JSON-LD Movie/TVSeries schema for Google Rich Results
+      try {
+        let script = document.getElementById('media-jsonld') as HTMLScriptElement | null;
+        if (!script) {
+          script = document.createElement('script');
+          script.id = 'media-jsonld';
+          script.type = 'application/ld+json';
+          document.head.appendChild(script);
+        }
+        script.text = JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': item.type === 'series' ? 'TVSeries' : 'Movie',
+          name: item.title,
+          description: item.overview || '',
+          image: item.poster || item.backdrop || '',
+          datePublished: item.releaseDate || String(item.year || ''),
+          genre: item.genres || [],
+          aggregateRating: item.rating
+            ? {
+                '@type': 'AggregateRating',
+                ratingValue: item.rating,
+                bestRating: '10',
+                worstRating: '1',
+                ratingCount: item.votes || 100,
+              }
+            : undefined,
+        });
+      } catch {
+        // ignore schema injection errors
+      }
     } else {
-      const routeTitles: Record<NavRoute, string> = {
-        home: 'CeniPluse — Stream Movies, Series & Live Cinema',
-        movies: 'Movies Spotlight — CeniPluse',
-        series: 'Browse TV Series & Shows — CeniPluse',
-        animation: 'Animation, Cartoons & Anime — CeniPluse',
-        trending: 'Trending & Most Watched — CeniPluse',
-        search: 'Search Catalog — CeniPluse',
-        watchlist: 'My Watchlist — CeniPluse',
-        downloads: 'Downloads — CeniPluse',
-        admin: 'Admin Publishing Studio — CeniPluse',
+      const routeTitles: Record<NavRoute, { title: string; desc: string }> = {
+        home: {
+          title: 'CeniPluse — Watch Free Movies, TV Series & Anime in HD',
+          desc: 'Stream and download trending movies, TV series, anime, and Nollywood hits in HD on CeniPluse. 100% free streaming with multi-server mirrors.',
+        },
+        movies: {
+          title: 'Watch Trending Movies & Blockbusters in HD — CeniPluse',
+          desc: 'Explore the latest Hollywood, Nollywood, and international movies in 1080p and 4K with multi-server playback on CeniPluse.',
+        },
+        series: {
+          title: 'Stream Popular TV Series, Shows & K-Drama — CeniPluse',
+          desc: 'Binge-watch full seasons and episodes of top trending television series, Korean dramas, and English shows free on CeniPluse.',
+        },
+        animation: {
+          title: 'Watch Anime & Animated Series Online Free — CeniPluse',
+          desc: 'Stream top Japanese anime series with English Sub & Dub, classic cartoons, and animated movies in HD on CeniPluse.',
+        },
+        trending: {
+          title: 'Most Watched & Trending Today — CeniPluse',
+          desc: 'Discover the most popular movies and TV series trending worldwide right now on CeniPluse.',
+        },
+        search: {
+          title: 'Search Free Movies, TV Shows, Cast & Genres — CeniPluse',
+          desc: 'Search our catalog of over 1,000,000 movies, series, anime, and Nollywood hits by title, actor, or genre.',
+        },
+        watchlist: {
+          title: 'My Watchlist & Favorites — CeniPluse',
+          desc: 'Access your saved movies, TV shows, and bookmarks on CeniPluse.',
+        },
+        downloads: {
+          title: 'Downloads & Offline Mirrors — CeniPluse',
+          desc: 'Manage your downloaded movies and offline video files on CeniPluse.',
+        },
+        admin: {
+          title: 'Admin Publishing Studio — CeniPluse',
+          desc: 'CeniPluse Content Management and Stream Publishing Dashboard.',
+        },
       };
-      document.title = routeTitles[activeRoute] || 'CeniPluse';
+      const meta = routeTitles[activeRoute] || routeTitles.home;
+      document.title = meta.title;
+      setMetaTag('meta[name="description"]', 'content', meta.desc);
+      setMetaTag('meta[property="og:title"]', 'content', meta.title);
+      setMetaTag('meta[property="og:description"]', 'content', meta.desc);
+      setMetaTag('meta[property="og:url"]', 'content', `https://www.cenipluse.xyz/${activeRoute === 'home' ? '' : `?view=${activeRoute}`}`);
+      setMetaTag('link[rel="canonical"]', 'href', `https://www.cenipluse.xyz/${activeRoute === 'home' ? '' : `?view=${activeRoute}`}`);
+      const mediaScript = document.getElementById('media-jsonld');
+      if (mediaScript) mediaScript.remove();
     }
   }, [activeRoute, searchQuery, filters, selectedMedia, directoryHeading, directoryTypeFilter]);
 

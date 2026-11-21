@@ -1,0 +1,28 @@
+User-agent: *
+Allow: /
+Disallow: /api/admin/
+Disallow: /api/cms/admin/
+
+# Search Engine Crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+Sitemap: https://www.cenipluse.xyz/sitemap.xml

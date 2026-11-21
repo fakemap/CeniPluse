@@ -85,25 +85,58 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Technical SEO: robots.txt & dynamic XML sitemap
+// Technical SEO: robots.txt, Google Search Console verification & dynamic XML sitemap
 app.get('/robots.txt', (req, res) => {
   const host = `${req.protocol}://${req.get('host')}`;
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /api/admin/\nDisallow: /api/cms/admin/\nSitemap: ${host}/sitemap.xml\n`);
+  res.type('text/plain').send(
+    `User-agent: *\nAllow: /\nDisallow: /api/admin/\nDisallow: /api/cms/admin/\nSitemap: ${host}/sitemap.xml\n`
+  );
+});
+
+// Automatic Google Search Console HTML File verification route
+app.get('/google:hash.html', (req, res) => {
+  const hash = req.params.hash || '';
+  res.type('text/html').send(`google-site-verification: google${hash}.html`);
 });
 
 app.get('/sitemap.xml', (req, res) => {
   const host = `${req.protocol}://${req.get('host')}`;
-  const routes = ['', '?view=movies', '?view=series', '?view=animation', '?view=trending'];
+  const coreRoutes = [
+    { path: '', freq: 'daily', prio: '1.0' },
+    { path: '?view=movies', freq: 'daily', prio: '0.9' },
+    { path: '?view=series', freq: 'daily', prio: '0.9' },
+    { path: '?view=animation', freq: 'daily', prio: '0.9' },
+    { path: '?view=trending', freq: 'daily', prio: '0.8' },
+    { path: '?view=search', freq: 'weekly', prio: '0.7' },
+    { path: '?category=hollywood', freq: 'daily', prio: '0.85' },
+    { path: '?category=nollywood', freq: 'daily', prio: '0.85' },
+    { path: '?category=bollywood', freq: 'daily', prio: '0.85' },
+    { path: '?category=k-drama', freq: 'daily', prio: '0.85' },
+    { path: '?category=anime', freq: 'daily', prio: '0.85' },
+    { path: '?view=movies&genre=Action', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Comedy', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Horror', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Romance', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Sci-Fi', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Thriller', freq: 'daily', prio: '0.8' },
+    { path: '?view=movies&genre=Drama', freq: 'daily', prio: '0.8' },
+    { path: '?view=series&genre=Action', freq: 'daily', prio: '0.8' },
+    { path: '?view=series&genre=Drama', freq: 'daily', prio: '0.8' },
+  ];
+
   const published = store
     .getCmsTitles()
     .filter((t) => t.status === 'published')
-    .slice(0, 100);
+    .slice(0, 150);
 
   const urls = [
-    ...routes.map((r) => `  <url><loc>${host}/${r}</loc><changefreq>daily</changefreq></url>`),
+    ...coreRoutes.map(
+      (r) =>
+        `  <url>\n    <loc>${host}/${r.path.replace(/&/g, '&amp;')}</loc>\n    <changefreq>${r.freq}</changefreq>\n    <priority>${r.prio}</priority>\n  </url>`
+    ),
     ...published.map(
       (t) =>
-        `  <url><loc>${host}/?title=${encodeURIComponent(t.id)}</loc><changefreq>weekly</changefreq></url>`
+        `  <url>\n    <loc>${host}/?title=${encodeURIComponent(t.id)}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`
     ),
   ].join('\n');
 
