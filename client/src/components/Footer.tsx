@@ -97,8 +97,8 @@ export const Footer: React.FC<FooterProps> = ({
   ];
 
   return (
-    <footer className="w-full bg-[#0D1017] border-t border-white/[0.06] text-[#94A3B8] text-xs pt-8 pb-12 px-5 sm:px-8 mt-12 select-none">
-      <div className="max-w-6xl mx-auto space-y-7">
+    <footer className="w-full bg-[#0D1017] border-t border-white/[0.06] text-[#94A3B8] text-xs pt-8 pb-12 px-5 sm:px-6 md:px-6 lg:px-8 mt-12 select-none">
+      <div className="w-full space-y-6">
         {/* Brand & Language Selector */}
         <div className="flex items-center justify-between gap-4 border-b border-white/[0.06] pb-5">
           <div className="flex items-center gap-2.5">
@@ -148,134 +148,137 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        {/* Get CeniPluse App */}
-        <div className="space-y-2.5">
-          <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Get CeniPluse app</h4>
-          <div>
-            <button
-              type="button"
-              onClick={onOpenAppModal}
-              className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#141821] hover:bg-[#1C2230] border border-white/[0.08] text-left transition-all active:scale-[0.98] group"
-            >
-              <div className="text-[#10B981] group-hover:scale-105 transition-transform">
-                <AndroidRobotIcon className="w-6 h-6 fill-current" />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-[#94A3B8] leading-none">
-                  Download our
+        {/* Full-Width 4-Column Horizontal Grid on Desktop, Stacked on Mobile */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+          {/* 1. Get CeniPluse App */}
+          <div className="space-y-2.5">
+            <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Get CeniPluse app</h4>
+            <div>
+              <button
+                type="button"
+                onClick={onOpenAppModal}
+                className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#141821] hover:bg-[#1C2230] border border-white/[0.08] text-left transition-all active:scale-[0.98] group"
+              >
+                <div className="text-[#10B981] group-hover:scale-105 transition-transform">
+                  <AndroidRobotIcon className="w-6 h-6 fill-current" />
                 </div>
-                <div className="text-xs font-bold text-[#F8FAFC] leading-tight">Android App</div>
-              </div>
-            </button>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[#94A3B8] leading-none">
+                    Download our
+                  </div>
+                  <div className="text-xs font-bold text-[#F8FAFC] leading-tight">Android App</div>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Community */}
-        <div className="space-y-2.5">
-          <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Community</h4>
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => handleShare('x')}
-              title="Share on X"
-              aria-label="Share on X"
-              className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
-            >
-              <TwitterXIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleShare('tiktok')}
-              title="TikTok"
-              aria-label="TikTok"
-              className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
-            >
-              <TikTokIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleShare('fb')}
-              title="Share on Facebook"
-              aria-label="Share on Facebook"
-              className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
-            >
-              <FacebookIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleShare('wa')}
-              title="Share on WhatsApp"
-              aria-label="Share on WhatsApp"
-              className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#10B981] flex items-center justify-center transition-colors"
-            >
-              <WhatsAppIcon className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleShare('tg')}
-              title="Share on Telegram"
-              aria-label="Share on Telegram"
-              className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
-            >
-              <TelegramIcon className="w-4 h-4" />
-            </button>
+          {/* 2. Community */}
+          <div className="space-y-2.5">
+            <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Community</h4>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleShare('x')}
+                title="Share on X"
+                aria-label="Share on X"
+                className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
+              >
+                <TwitterXIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShare('tiktok')}
+                title="TikTok"
+                aria-label="TikTok"
+                className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
+              >
+                <TikTokIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShare('fb')}
+                title="Share on Facebook"
+                aria-label="Share on Facebook"
+                className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
+              >
+                <FacebookIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShare('wa')}
+                title="Share on WhatsApp"
+                aria-label="Share on WhatsApp"
+                className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#10B981] flex items-center justify-center transition-colors"
+              >
+                <WhatsAppIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShare('tg')}
+                title="Share on Telegram"
+                aria-label="Share on Telegram"
+                className="w-9 h-9 rounded-full bg-[#141821] hover:bg-[#1E2430] border border-white/[0.08] text-[#CBD5E1] hover:text-[#00E5FF] flex items-center justify-center transition-colors"
+              >
+                <TelegramIcon className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Contact Us */}
-        <div className="space-y-1">
-          <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Contact Us</h4>
-          <p className="text-xs text-[#94A3B8]">
-            Service Email:{' '}
-            <a
-              href="mailto:support@cenipluse.xyz"
-              className="text-[#00E5FF] hover:underline font-medium"
-            >
-              support@cenipluse.xyz
-            </a>
-          </p>
-        </div>
+          {/* 3. Contact Us */}
+          <div className="space-y-2.5">
+            <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Contact Us</h4>
+            <p className="text-xs text-[#94A3B8]">
+              Service Email:{' '}
+              <a
+                href="mailto:support@cenipluse.xyz"
+                className="text-[#00E5FF] hover:underline font-medium"
+              >
+                support@cenipluse.xyz
+              </a>
+            </p>
+          </div>
 
-        {/* About CeniPluse */}
-        <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-          <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">About CeniPluse</h4>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard?.writeText?.('https://www.cenipluse.xyz');
-                alert('Official link copied: https://www.cenipluse.xyz');
-              }}
-              className="hover:text-[#F8FAFC] transition-colors"
-            >
-              Official Link Release
-            </button>
-            <button
-              type="button"
-              onClick={onOpenAppModal}
-              className="hover:text-[#F8FAFC] transition-colors"
-            >
-              Download CeniPluse APK
-            </button>
-            <button
-              type="button"
-              onClick={() => setLegalModal('privacy')}
-              className="hover:text-[#F8FAFC] transition-colors"
-            >
-              Privacy Policy
-            </button>
-            <button
-              type="button"
-              onClick={() => setLegalModal('terms')}
-              className="hover:text-[#F8FAFC] transition-colors"
-            >
-              User Agreement
-            </button>
+          {/* 4. About CeniPluse */}
+          <div className="space-y-2.5">
+            <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">About CeniPluse</h4>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText?.('https://www.cenipluse.xyz');
+                  alert('Official link copied: https://www.cenipluse.xyz');
+                }}
+                className="hover:text-[#F8FAFC] transition-colors"
+              >
+                Official Link Release
+              </button>
+              <button
+                type="button"
+                onClick={onOpenAppModal}
+                className="hover:text-[#F8FAFC] transition-colors"
+              >
+                Download CeniPluse APK
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalModal('privacy')}
+                className="hover:text-[#F8FAFC] transition-colors"
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalModal('terms')}
+                className="hover:text-[#F8FAFC] transition-colors"
+              >
+                User Agreement
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Backlink */}
-        <div className="space-y-2">
+        <div className="space-y-2 pt-4 border-t border-white/[0.06]">
           <h4 className="text-xs font-bold text-[#F8FAFC] tracking-wide">Backlink</h4>
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-xs text-[#64748B]">
             {backlinks.map((link, idx) => (
