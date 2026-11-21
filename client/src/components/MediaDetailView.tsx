@@ -22,6 +22,8 @@ import {
   Server,
   Subtitles,
   X,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import type {
   CastMember,
@@ -37,8 +39,11 @@ import {
   hasVidLinkSupport,
   isAnimeMedia,
   resolveVidLinkEmbedUrl,
+  resolveMultiEmbedUrl,
+  isUpcomingMedia,
   type VidLinkAnimeAudio,
   type VidLinkPlayerType,
+  type EmbedProvider,
 } from '../utils/vidlink';
 import { DownloadOptionsModal } from './DownloadOptionsModal';
 import { SnippetPlayer } from './SnippetPlayer';
@@ -101,7 +106,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
   );
   const [activeVideoKey, setActiveVideoKey] = useState<string>(item.trailerYoutubeId || '');
 
-  // VidLink (vidlink.pro) Embed Player State & Customization Controls
+  // Multi-Provider Embed Player State & Customization Controls
+  const [embedProvider, setEmbedProvider] = useState<EmbedProvider>('vidlink');
   const [vidlinkPlayerType, setVidlinkPlayerType] = useState<VidLinkPlayerType>('default');
   const [animeAudioType, setAnimeAudioType] = useState<VidLinkAnimeAudio>('sub');
   const [malIdOverride, setMalIdOverride] = useState<string>(() => {
@@ -206,6 +212,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     setScrapedSubtitles([]);
     setMycimaSeasonDownloads([]);
     userPinnedEmbedRef.current = false;
+    setEmbedProvider('vidlink');
 
     try {
       const savedMal = item.malId
@@ -296,9 +303,19 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       }
 
       if (autoPlayVideo && (mergedSources.length > 0 || canAutoEmbed)) {
-        // Always enter native ad-free stream mode first; auto-falls back to backup cloud only if 0 native servers resolve
-        setMode('stream');
-        setMuted(false);
+        if (mergedSources.length > 0) {
+          setMode('stream');
+          setMuted(false);
+        } else if (isUpcomingMedia(det) && bestTrailer) {
+          // Unreleased or upcoming movie: play official trailer instead of broken stream embed
+          setMode('trailer');
+          setTrailerFullPlayer(true);
+          setMuted(false);
+        } else {
+          // Always enter native ad-free stream mode first; auto-falls back to backup cloud only if 0 native servers resolve
+          setMode('stream');
+          setMuted(false);
+        }
       } else {
         setMode('poster');
         setTrailerFullPlayer(false);
@@ -428,10 +445,16 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             return currentMode;
           });
         } else {
-          // Only fall back to backup cloud embed if zero ad-free native sources resolved
+          // Fall back to trailer for upcoming titles, or backup cloud embed if zero ad-free native sources resolved
           setMode((currentMode) => {
-            if (currentMode === 'stream' && canEmbedVidLink) {
-              return 'embed';
+            if (currentMode === 'stream') {
+              if (isUpcomingMedia(enriched) && activeVideoKey) {
+                setTrailerFullPlayer(true);
+                return 'trailer';
+              }
+              if (canEmbedVidLink) {
+                return 'embed';
+              }
             }
             return currentMode;
           });
@@ -440,7 +463,18 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       .catch(() => {
         if (mounted) {
           setResolvingStreams(false);
-          setMode((currentMode) => (currentMode === 'stream' && canEmbedVidLink ? 'embed' : currentMode));
+          setMode((currentMode) => {
+            if (currentMode === 'stream') {
+              if (isUpcomingMedia(enriched) && activeVideoKey) {
+                setTrailerFullPlayer(true);
+                return 'trailer';
+              }
+              if (canEmbedVidLink) {
+                return 'embed';
+              }
+            }
+            return currentMode;
+          });
         }
       });
 
@@ -578,6 +612,11 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     [enriched, parsedMalId]
   );
 
+  const isUpcoming = useMemo(
+    () => isUpcomingMedia(enriched),
+    [enriched.releaseDate, enriched.year]
+  );
+
   const isAnime = useMemo(() => isAnimeMedia(enriched) || Boolean(parsedMalId), [enriched, parsedMalId]);
 
   const savedStartAtSec = useMemo(() => {
@@ -590,8 +629,9 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     }
   }, [enriched.id, activeEpisodeLabel]);
 
-  const vidlinkEmbedUrl = useMemo(() => {
-    return resolveVidLinkEmbedUrl({
+  const activeEmbedUrl = useMemo(() => {
+    return resolveMultiEmbedUrl({
+      provider: embedProvider,
       item: enriched,
       season: selectedSeasonNum,
       episode: selectedEpNum,
@@ -613,6 +653,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       },
     });
   }, [
+    embedProvider,
     enriched,
     selectedSeasonNum,
     selectedEpNum,
@@ -623,6 +664,8 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
     externalSubUrl,
     externalSubLabel,
   ]);
+
+  const vidlinkEmbedUrl = activeEmbedUrl;
 
   // Record initial progress & listen for VidLink MEDIA_DATA postMessages when streaming via VidLink embed
   useEffect(() => {
@@ -926,6 +969,15 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#CBD5E1] tabular-nums">
                 <span className="font-bold text-[#10B981]">{enriched.year}</span>
+                {isUpcoming && (
+                  <>
+                    <span className="text-white/35">&bull;</span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#FFB800]/20 border border-[#FFB800]/40 text-[#FFB800] text-[10px] font-extrabold uppercase tracking-wide inline-flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      Upcoming
+                    </span>
+                  </>
+                )}
                 {enriched.runtime && (
                   <>
                     <span className="text-white/35">&bull;</span>
@@ -977,7 +1029,44 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
             {/* Primary Action Bar */}
             <div className="pt-1 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-              {hasPlayableFullVideo ? (
+              {isUpcoming && activeVideoKey ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviewDismissed(false);
+                      setMuted(false);
+                      setMode('trailer');
+                      setTrailerFullPlayer(true);
+                    }}
+                    className="w-full sm:w-auto h-12 sm:h-[42px] px-5 rounded-xl sm:rounded-md bg-[#FFB800] hover:bg-[#FFC526] active:scale-[0.98] text-[#071018] text-sm sm:text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all shrink-0"
+                  >
+                    <Play className="w-4 h-4 sm:w-3.5 sm:h-3.5 fill-current" />
+                    Watch Official Trailer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={requesting}
+                    onClick={handleRequestTitle}
+                    className={`w-full sm:w-auto h-12 sm:h-[42px] px-4 rounded-xl sm:rounded-md text-sm sm:text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all shrink-0 ${
+                      hasRequested
+                        ? 'bg-[#10B981]/20 border border-[#10B981]/50 text-[#10B981]'
+                        : 'bg-[#141821] border border-white/10 hover:border-white/25 text-[#F8FAFC]'
+                    }`}
+                  >
+                    {hasRequested ? (
+                      <CheckCircle2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#10B981]" />
+                    ) : (
+                      <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#00E5FF]" />
+                    )}
+                    {requesting
+                      ? 'Requesting...'
+                      : hasRequested
+                      ? `Requested${requestCount > 0 ? ` (${requestCount})` : ''}`
+                      : 'Notify When Streaming'}
+                  </button>
+                </>
+              ) : hasPlayableFullVideo ? (
                 <button
                   type="button"
                   onClick={handleWatchPrimary}
@@ -1345,6 +1434,30 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                   </div>
                 )}
 
+                {isUpcoming && (
+                  <div className="absolute top-3 left-3 right-36 z-20 pointer-events-auto">
+                    <div className="px-3 py-1.5 rounded-xl bg-[#0B0D12]/90 backdrop-blur-md border border-[#FFB800]/50 text-[#FFB800] text-[11px] font-semibold flex items-center justify-between gap-2 shadow-xl">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Calendar className="w-3.5 h-3.5 shrink-0 text-[#FFB800]" />
+                        <span className="truncate">Upcoming Cinema Film ({enriched.releaseDate || enriched.year})</span>
+                      </div>
+                      {activeVideoKey && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMode('trailer');
+                            setTrailerFullPlayer(true);
+                            setMuted(false);
+                          }}
+                          className="px-2 py-0.5 rounded bg-[#FFB800]/20 hover:bg-[#FFB800]/30 text-[#FFB800] font-bold text-[10px] shrink-0"
+                        >
+                          Play Trailer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
                   <button
                     type="button"
@@ -1464,34 +1577,69 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         type="button"
                         onClick={() => {
                           userPinnedEmbedRef.current = true;
+                          setEmbedProvider('vidlink');
                           setVidlinkPlayerType('default');
                           setMode('embed');
                         }}
                         className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                          mode === 'embed' && vidlinkPlayerType === 'default'
+                          mode === 'embed' && embedProvider === 'vidlink'
                             ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                             : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 1} (Cloud HD)`}
+                        {`Server ${activeSources.length + 1} (VidLink Cloud)`}
                       </button>
 
                       <button
                         type="button"
                         onClick={() => {
                           userPinnedEmbedRef.current = true;
-                          setVidlinkPlayerType('jw');
+                          setEmbedProvider('vidsrc_cc');
                           setMode('embed');
                         }}
                         className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
-                          mode === 'embed' && vidlinkPlayerType === 'jw'
+                          mode === 'embed' && embedProvider === 'vidsrc_cc'
                             ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                             : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
                         }`}
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        {`Server ${activeSources.length + 2} (Backup HD)`}
+                        {`Server ${activeSources.length + 2} (VidSrc Stream)`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          userPinnedEmbedRef.current = true;
+                          setEmbedProvider('autoembed');
+                          setMode('embed');
+                        }}
+                        className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                          mode === 'embed' && embedProvider === 'autoembed'
+                            ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                            : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        {`Server ${activeSources.length + 3} (AutoEmbed HD)`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          userPinnedEmbedRef.current = true;
+                          setEmbedProvider('vidsrc_xyz');
+                          setMode('embed');
+                        }}
+                        className={`min-h-[34px] px-3 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                          mode === 'embed' && embedProvider === 'vidsrc_xyz'
+                            ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                            : 'bg-[#141821] border-white/10 text-[#CBD5E1] hover:border-white/25'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        {`Server ${activeSources.length + 4} (Backup Mirror)`}
                       </button>
                     </>
                   )}
@@ -1977,11 +2125,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           onClick={() => {
                             if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
                             userPinnedEmbedRef.current = true;
+                            setEmbedProvider('vidlink');
                             setVidlinkPlayerType('default');
                             setMode('embed');
                           }}
                           className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
-                            mode === 'embed' && vidlinkPlayerType === 'default'
+                            mode === 'embed' && embedProvider === 'vidlink'
                               ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                               : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
                           }`}
@@ -1990,7 +2139,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                           <span>
                             {parsedMalId
                               ? `Server ${activeSources.length + 1} (${animeAudioType.toUpperCase()})`
-                              : `Server ${activeSources.length + 1} (Cloud HD)`}
+                              : `Server ${activeSources.length + 1} (VidLink Cloud)`}
                           </span>
                           <span className="text-[#94A3B8] font-normal">(1080p Auto)</span>
                         </button>
@@ -1998,21 +2147,87 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
                         <button
                           type="button"
                           onClick={() => {
+                            if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
                             userPinnedEmbedRef.current = true;
-                            setVidlinkPlayerType('jw');
+                            setEmbedProvider('vidsrc_cc');
                             setMode('embed');
                           }}
                           className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
-                            mode === 'embed' && vidlinkPlayerType === 'jw'
+                            mode === 'embed' && embedProvider === 'vidsrc_cc'
                               ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
                               : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
                           }`}
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>{`Server ${activeSources.length + 2} (Backup HD)`}</span>
+                          <span>{`Server ${activeSources.length + 2} (VidSrc Stream)`}</span>
+                          <span className="text-[#94A3B8] font-normal">(Fast HD)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
+                            userPinnedEmbedRef.current = true;
+                            setEmbedProvider('autoembed');
+                            setMode('embed');
+                          }}
+                          className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                            mode === 'embed' && embedProvider === 'autoembed'
+                              ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                              : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
+                          }`}
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>{`Server ${activeSources.length + 3} (AutoEmbed HD)`}</span>
+                          <span className="text-[#94A3B8] font-normal">(Multi)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!ensureSubscribedFor(`stream "${enriched.title}"`)) return;
+                            userPinnedEmbedRef.current = true;
+                            setEmbedProvider('vidsrc_xyz');
+                            setMode('embed');
+                          }}
+                          className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-2 transition-colors ${
+                            mode === 'embed' && embedProvider === 'vidsrc_xyz'
+                              ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
+                              : 'bg-[#141821] border-white/[0.08] text-[#F8FAFC] hover:border-white/25'
+                          }`}
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>{`Server ${activeSources.length + 4} (Backup Mirror)`}</span>
                           <span className="text-[#94A3B8] font-normal">(1080p)</span>
                         </button>
                       </>
+                    )}
+                  </div>
+                )}
+
+                {isUpcoming && activeSources.length === 0 && (
+                  <div className="w-full mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <Calendar className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-amber-300 font-bold">Upcoming Cinema Release ({enriched.releaseDate || enriched.year}).</strong>{' '}
+                        High-definition streaming mirrors are uploaded to servers following theatrical run. If one server shows &ldquo;We Couldn&rsquo;t Find This Content&rdquo;, try alternative servers above or watch the official trailer!
+                      </div>
+                    </div>
+                    {activeVideoKey && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewDismissed(false);
+                          setMuted(false);
+                          setMode('trailer');
+                          setTrailerFullPlayer(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs shrink-0 transition-colors inline-flex items-center gap-1.5 self-start sm:self-center"
+                      >
+                        <Youtube className="w-3.5 h-3.5 text-red-500 fill-current" />
+                        Watch Official Trailer
+                      </button>
                     )}
                   </div>
                 )}

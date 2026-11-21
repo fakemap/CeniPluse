@@ -3,6 +3,7 @@ import type { MediaItem } from '../types/media';
 export type VidLinkAnimeAudio = 'sub' | 'dub';
 export type VidLinkPlayerType = 'default' | 'jw';
 export type VidLinkIconStyle = 'vid' | 'default';
+export type EmbedProvider = 'vidlink' | 'vidsrc_cc' | 'autoembed' | 'vidsrc_xyz';
 
 export interface VidLinkCustomizationParams {
   /** Sets the primary color of the player, including sliders and autoplay controls (Hex without '#'). */
@@ -234,4 +235,72 @@ export function resolveVidLinkEmbedUrl(options: {
   }
 
   return item.embedUrl || '';
+}
+
+/**
+ * Resolves an embed URL across multiple independent streaming mirror providers:
+ * - vidlink: VidLink Player (with custom styling, resume time, auto-play)
+ * - vidsrc_cc: VidSrc V2 embed
+ * - autoembed: AutoEmbed Cloud player
+ * - vidsrc_xyz: VidSrc XYZ backup mirror
+ */
+export function resolveMultiEmbedUrl(options: {
+  provider: EmbedProvider;
+  item: Pick<MediaItem, 'tmdbId' | 'malId' | 'type' | 'embedUrl' | 'regionTag' | 'genres' | 'country'>;
+  season?: number;
+  episode?: number;
+  subOrDub?: VidLinkAnimeAudio;
+  malIdOverride?: number | null;
+  params?: VidLinkCustomizationParams;
+}): string {
+  const { provider, item, season = 1, episode = 1, subOrDub = 'sub', malIdOverride, params } = options;
+
+  if (provider === 'vidlink') {
+    return resolveVidLinkEmbedUrl({ item, season, episode, subOrDub, malIdOverride, params });
+  }
+
+  if (!item.tmdbId) {
+    return item.embedUrl || '';
+  }
+
+  const cleanId = encodeURIComponent(String(item.tmdbId).trim());
+  const s = Math.max(1, Math.floor(Number(season) || 1));
+  const ep = Math.max(1, Math.floor(Number(episode) || 1));
+
+  if (provider === 'vidsrc_cc') {
+    return item.type === 'series'
+      ? `https://vidsrc.cc/v2/embed/tv/${cleanId}/${s}/${ep}`
+      : `https://vidsrc.cc/v2/embed/movie/${cleanId}`;
+  }
+
+  if (provider === 'autoembed') {
+    return item.type === 'series'
+      ? `https://player.autoembed.cc/embed/tv/${cleanId}/${s}/${ep}`
+      : `https://player.autoembed.cc/embed/movie/${cleanId}`;
+  }
+
+  if (provider === 'vidsrc_xyz') {
+    return item.type === 'series'
+      ? `https://vidsrc.xyz/embed/tv?tmdb=${cleanId}&season=${s}&episode=${ep}`
+      : `https://vidsrc.xyz/embed/movie?tmdb=${cleanId}`;
+  }
+
+  return resolveVidLinkEmbedUrl({ item, season, episode, subOrDub, malIdOverride, params });
+}
+
+/**
+ * Checks if a title is unreleased or scheduled for a future date.
+ */
+export function isUpcomingMedia(item: { releaseDate?: string; year?: number }): boolean {
+  if (item.releaseDate) {
+    const d = new Date(item.releaseDate);
+    if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
+      return true;
+    }
+  }
+  const currentYear = new Date().getFullYear();
+  if (item.year && item.year > currentYear) {
+    return true;
+  }
+  return false;
 }

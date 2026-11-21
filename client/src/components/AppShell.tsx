@@ -3,6 +3,7 @@ import { Home, Film, Tv, Search, Bookmark, Clapperboard } from 'lucide-react';
 import type { MediaItem, NavRoute } from '../types/media';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
+import { Footer } from './Footer';
 
 interface AppShellProps {
   activeRoute: NavRoute;
@@ -102,6 +103,14 @@ export const AppShell: React.FC<AppShellProps> = ({
         >
           {children}
         </div>
+
+        {/* Global MovieBox-Style Footer */}
+        <Footer
+          uiLanguage={uiLanguage}
+          onChangeLanguage={onChangeLanguage}
+          onOpenAppModal={() => onOpenModal('app')}
+          onNavigate={onNavigate}
+        />
       </main>
 
       {/* Fixed Bottom Navigation Bar — 6 tabs on mobile */}
