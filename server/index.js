@@ -85,18 +85,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Technical SEO: robots.txt, Google Search Console verification & dynamic XML sitemap
+// Technical SEO: robots.txt & dynamic XML sitemap
 app.get('/robots.txt', (req, res) => {
   const host = `${req.protocol}://${req.get('host')}`;
   res.type('text/plain').send(
     `User-agent: *\nAllow: /\nDisallow: /api/admin/\nDisallow: /api/cms/admin/\nSitemap: ${host}/sitemap.xml\n`
   );
-});
-
-// Automatic Google Search Console HTML File verification route
-app.get('/google:hash.html', (req, res) => {
-  const hash = req.params.hash || '';
-  res.type('text/html').send(`google-site-verification: google${hash}.html`);
 });
 
 app.get('/sitemap.xml', (req, res) => {
