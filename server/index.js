@@ -170,7 +170,7 @@ app.use((err, req, res, _next) => {
 });
 
 function startServer() {
-  return app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('\n======================================================');
     console.log('  CINEBOX — Cinema Streaming & Download Hub Running');
     console.log('======================================================');
@@ -185,6 +185,12 @@ function startServer() {
     }
     console.log('======================================================\n');
   });
+  // Disable Node's default 5-minute requestTimeout so large HD MP4 downloads never drop mid-transfer
+  server.requestTimeout = 0;
+  server.timeout = 0;
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+  return server;
 }
 
 if (!process.env.VERCEL && require.main === module) {

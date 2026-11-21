@@ -1533,7 +1533,7 @@ router.get('/resolve', async (req, res) => {
 // ============================================================================
 // Encrypted HLS & Media Segment Proxy + On-the-Fly HLS-to-Video File Downloader
 // ============================================================================
-function fetchUpstream(targetUrl, customHeaders = {}, redirects = 0) {
+function fetchUpstream(targetUrl, customHeaders = {}, redirects = 0, connectTimeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error('Too many upstream redirects'));
     if (!isSafeExternalUrl(targetUrl)) {
@@ -1541,6 +1541,7 @@ function fetchUpstream(targetUrl, customHeaders = {}, redirects = 0) {
     }
 
     const client = targetUrl.startsWith('https') ? https : http;
+    let settled = false;
     const req = client.get(
       targetUrl,
       {
@@ -1549,9 +1550,11 @@ function fetchUpstream(targetUrl, customHeaders = {}, redirects = 0) {
           Accept: '*/*',
           ...customHeaders,
         },
-        timeout: 12000,
+        timeout: connectTimeoutMs,
       },
       (res) => {
+        // Headers received — clear the connect timeout so long video streams/downloads aren't killed
+        req.setTimeout(0);
         if (
           res.statusCode >= 300 &&
           res.statusCode < 400 &&
@@ -1560,17 +1563,224 @@ function fetchUpstream(targetUrl, customHeaders = {}, redirects = 0) {
           const loc = res.headers.location;
           const nextUrl = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
           res.resume();
-          return resolve(fetchUpstream(nextUrl, customHeaders, redirects + 1));
+          settled = true;
+          return resolve(fetchUpstream(nextUrl, customHeaders, redirects + 1, connectTimeoutMs));
         }
+        settled = true;
         resolve(res);
       }
     );
 
     req.on('timeout', () => {
-      req.destroy(new Error('Upstream request timed out'));
+      if (!settled) {
+        settled = true;
+        req.destroy(new Error('Upstream request timed out'));
+      }
     });
-    req.on('error', reject);
+    req.on('error', (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
   });
+}
+
+/**
+ * Bulletproof chunked-range MP4 download proxy.
+ * Streams upstream video in sequential 8 MB HTTP Range chunks with automatic retry
+ * from the exact byte offset on any CDN stall, socket reset, or throttle, while
+ * supporting native browser Pause/Resume (HTTP 206 + Accept-Ranges + ETag).
+ */
+async function streamResilientMp4Download({ rawUrl, referer, origin, req, res, safeName }) {
+  req.setTimeout(0);
+  res.setTimeout(0);
+
+  const baseHeaders = { Referer: referer, Origin: origin };
+  let probeRes;
+  try {
+    probeRes = await fetchUpstream(rawUrl, { ...baseHeaders, Range: 'bytes=0-0' }, 0, 15000);
+  } catch {
+    return false;
+  }
+
+  const probeStatus = probeRes.statusCode || 200;
+  const contentRange = String(probeRes.headers['content-range'] || '');
+  const contentType = String(probeRes.headers['content-type'] || 'video/mp4').toLowerCase();
+  const etag = probeRes.headers.etag;
+  const lastModified = probeRes.headers['last-modified'];
+  const totalMatch = contentRange.match(/\/(\d+)\s*$/);
+  const totalBytes = totalMatch ? Number(totalMatch[1]) : 0;
+
+  // Drain/close the tiny 1-byte probe immediately
+  probeRes.resume();
+
+  // Only use chunked Range engine if upstream confirmed HTTP 206 + exact total size
+  if (probeStatus !== 206 || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+    return false;
+  }
+
+  // Parse optional browser Range header for native Pause/Resume support
+  let start = 0;
+  let end = totalBytes - 1;
+  let isPartial = false;
+  const incomingRange = String(req.headers.range || '').trim();
+  if (incomingRange) {
+    const m = incomingRange.match(/bytes=(\d*)-(\d*)/i);
+    if (m) {
+      const reqStart = m[1] ? Number(m[1]) : 0;
+      const reqEnd = m[2] ? Number(m[2]) : totalBytes - 1;
+      if (Number.isFinite(reqStart) && reqStart >= 0 && reqStart < totalBytes) {
+        start = reqStart;
+        end = Math.min(totalBytes - 1, Number.isFinite(reqEnd) && reqEnd >= start ? reqEnd : totalBytes - 1);
+        isPartial = true;
+      } else {
+        res.statusCode = 416;
+        res.setHeader('Content-Range', `bytes */${totalBytes}`);
+        res.end();
+        return true;
+      }
+    }
+  }
+
+  const contentLength = end - start + 1;
+  res.statusCode = isPartial ? 206 : 200;
+  res.setHeader('Content-Type', contentType.includes('video') || contentType.includes('octet') ? contentType : 'video/mp4');
+  res.setHeader('Content-Length', String(contentLength));
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (isPartial) {
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${totalBytes}`);
+  }
+  if (etag) res.setHeader('ETag', etag);
+  if (lastModified) res.setHeader('Last-Modified', lastModified);
+
+  let aborted = false;
+  let activeUpstream = null;
+  const onClientClose = () => {
+    aborted = true;
+    if (activeUpstream && !activeUpstream.destroyed && typeof activeUpstream.destroy === 'function') {
+      activeUpstream.destroy();
+    }
+  };
+  req.on('close', onClientClose);
+  res.on('close', onClientClose);
+
+  const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per Range request (fast & never throttled by video CDNs)
+  const MAX_RETRIES = 6;
+  let offset = start;
+
+  try {
+    while (offset <= end && !aborted && !res.writableEnded) {
+      const chunkTargetEnd = Math.min(end, offset + CHUNK_SIZE - 1);
+      let chunkDone = false;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES && !aborted && !res.writableEnded; attempt++) {
+        const rangeStart = offset;
+        if (rangeStart > chunkTargetEnd) {
+          chunkDone = true;
+          break;
+        }
+
+        try {
+          const chunkStream = await fetchUpstream(
+            rawUrl,
+            { ...baseHeaders, Range: `bytes=${rangeStart}-${chunkTargetEnd}` },
+            0,
+            15000
+          );
+          activeUpstream = chunkStream;
+
+          if (chunkStream.statusCode !== 206 && chunkStream.statusCode !== 200) {
+            chunkStream.resume();
+            throw new Error(`Upstream HTTP ${chunkStream.statusCode}`);
+          }
+
+          await new Promise((resolve, reject) => {
+            let idleTimer = null;
+            const resetIdle = () => {
+              if (idleTimer) clearTimeout(idleTimer);
+              idleTimer = setTimeout(() => {
+                if (!chunkStream.destroyed) chunkStream.destroy(new Error('Chunk idle stall'));
+              }, 20000);
+            };
+            const cleanup = () => {
+              if (idleTimer) clearTimeout(idleTimer);
+              chunkStream.removeListener('data', onData);
+              chunkStream.removeListener('end', onEnd);
+              chunkStream.removeListener('error', onErr);
+              res.removeListener('drain', onDrain);
+            };
+            const onDrain = () => {
+              if (!aborted && !chunkStream.destroyed) {
+                resetIdle();
+                chunkStream.resume();
+              }
+            };
+            const onData = (buf) => {
+              if (aborted || res.writableEnded) {
+                cleanup();
+                if (!chunkStream.destroyed) chunkStream.destroy();
+                return resolve();
+              }
+              resetIdle();
+              const remaining = chunkTargetEnd - offset + 1;
+              const slice = buf.length > remaining ? buf.subarray(0, remaining) : buf;
+              if (slice.length === 0) return;
+              offset += slice.length;
+              const ok = res.write(slice);
+              if (!ok) {
+                chunkStream.pause();
+                res.once('drain', onDrain);
+              }
+            };
+            const onEnd = () => {
+              cleanup();
+              resolve();
+            };
+            const onErr = (err) => {
+              cleanup();
+              reject(err);
+            };
+
+            resetIdle();
+            chunkStream.on('data', onData);
+            chunkStream.on('end', onEnd);
+            chunkStream.on('error', onErr);
+          });
+
+          activeUpstream = null;
+          if (offset > chunkTargetEnd) {
+            chunkDone = true;
+            break;
+          }
+        } catch (err) {
+          activeUpstream = null;
+          if (aborted || res.writableEnded) break;
+          if (attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, Math.min(4000, attempt * 750)));
+          }
+        }
+      }
+
+      if (!chunkDone) {
+        // Exhausted retries on this chunk — end cleanly instead of hanging forever at 0 B/s
+        if (!res.writableEnded) res.destroy();
+        return true;
+      }
+    }
+
+    if (!aborted && !res.writableEnded) {
+      res.end();
+    }
+  } finally {
+    req.removeListener('close', onClientClose);
+    res.removeListener('close', onClientClose);
+  }
+
+  return true;
 }
 
 async function fetchUpstreamBuffer(targetUrl, customHeaders = {}) {
@@ -2255,14 +2465,46 @@ router.get('/proxy', async (req, res) => {
   const wantsSrt =
     String(req.query.format || '').toLowerCase() === 'srt' ||
     /\.srt$/i.test(requestedFilename);
+  const cleanRawPath = rawUrl.split('?')[0];
+  const looksLikeM3u8 = /\.m3u8?$/i.test(cleanRawPath);
+  const looksLikeSub =
+    wantsSrt ||
+    /\.vtt$|\.srt$/i.test(cleanRawPath) ||
+    rawUrl.includes('subs5.strem.io') ||
+    rawUrl.includes('sub.vdrk.site');
+
+  // For direct MP4/video downloads, use the resilient 8 MB chunked-range download engine
+  // so video CDNs never stall/drop at ~140 MB and native browser Pause/Resume works seamlessly
+  if (isDownload && !looksLikeM3u8 && !looksLikeSub) {
+    const safeName = requestedFilename
+      ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
+      : 'cenipluse-download.mp4';
+    try {
+      const handled = await streamResilientMp4Download({
+        rawUrl,
+        referer,
+        origin,
+        req,
+        res,
+        safeName,
+      });
+      if (handled) return;
+    } catch {
+      if (res.headersSent) {
+        if (!res.writableEnded) res.destroy();
+        return;
+      }
+    }
+  }
+
+  req.setTimeout(0);
+  res.setTimeout(0);
 
   const customHeaders = {
     Referer: referer,
     Origin: origin,
   };
-  if (req.headers.range && !isDownload) {
-    customHeaders.Range = req.headers.range;
-  } else if (req.headers.range && isDownload) {
+  if (req.headers.range) {
     customHeaders.Range = req.headers.range;
   }
 
@@ -2370,12 +2612,14 @@ router.get('/proxy', async (req, res) => {
 
     res.statusCode = upstream.statusCode || 200;
     res.setHeader('Content-Type', ct || 'application/octet-stream');
+    res.setHeader('X-Accel-Buffering', 'no');
     if (isDownload) {
       const ext = isSubtitle ? '.vtt' : '.mp4';
       const safeName = requestedFilename
         ? requestedFilename.replace(/[^a-zA-Z0-9._-]/g, '_')
         : `cenipluse-download${ext}`;
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+      res.setHeader('Cache-Control', 'no-store');
     }
     if (upstream.headers['content-length']) {
       res.setHeader('Content-Length', upstream.headers['content-length']);
@@ -2386,11 +2630,20 @@ router.get('/proxy', async (req, res) => {
     if (upstream.headers['accept-ranges']) {
       res.setHeader('Accept-Ranges', upstream.headers['accept-ranges']);
     }
+    if (upstream.headers.etag) {
+      res.setHeader('ETag', upstream.headers.etag);
+    }
+    if (upstream.headers['last-modified']) {
+      res.setHeader('Last-Modified', upstream.headers['last-modified']);
+    }
     const cleanupUpstream = () => {
       if (upstream && !upstream.destroyed && typeof upstream.destroy === 'function') {
         upstream.destroy();
       }
     };
+    upstream.on('error', () => {
+      if (!res.writableEnded) res.destroy();
+    });
     req.on('close', cleanupUpstream);
     res.on('close', cleanupUpstream);
     upstream.pipe(res);
