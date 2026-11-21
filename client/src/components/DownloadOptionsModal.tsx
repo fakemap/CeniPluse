@@ -131,6 +131,9 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
   const downloadAbortRef = useRef<AbortController | null>(null);
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const seasonDropdownRef = useRef<HTMLDivElement>(null);
+  const [audioDropdownOpen, setAudioDropdownOpen] = useState(false);
+  const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
+  const [subtitleDropdownOpen, setSubtitleDropdownOpen] = useState(false);
 
   const [resolvedModalSources, setResolvedModalSources] = useState<MediaSource[]>(activeSources);
   const [resolvedModalSubs, setResolvedModalSubs] =
@@ -900,173 +903,241 @@ export const DownloadOptionsModal: React.FC<DownloadOptionsModalProps> = ({
             onOpenPremium={() => onOpenPremium?.()}
           />
 
-          {/* Section 1B: Select Audio Language (Original vs Dubbed) */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
+          {/* Section 1B: Collapsible Audio / Dubbing Dropdown */}
+          <div className="rounded-xl bg-[#141923] border border-white/[0.08] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAudioDropdownOpen((o) => !o)}
+              className="w-full min-h-[48px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-white/[0.03] transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-7 h-7 rounded-md bg-[#00E5FF]/15 text-[#00E5FF] flex items-center justify-center shrink-0">
                   <Volume2 className="w-4 h-4" />
                 </span>
-                <span className="text-sm font-extrabold text-[#F8FAFC]">Select Audio Language</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-[#F8FAFC]">Audio / Dubbing</div>
+                  <div className="text-[11px] font-semibold text-[#10B981] truncate">
+                    {activeAudioObj?.label || `Original (${origLanguageName})`}
+                  </div>
+                </div>
               </div>
-              <span className="text-[11px] font-bold text-[#10B981] bg-[#10B981]/12 border border-[#10B981]/30 px-2.5 py-0.5 rounded-full">
-                {activeAudioObj?.label || `Original (${origLanguageName})`}
-              </span>
-            </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/[0.06] text-[#94A3B8]">
+                  {audioOptions.length} {audioOptions.length === 1 ? 'track' : 'tracks'}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 text-[#94A3B8] transition-transform ${
+                    audioDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </div>
+            </button>
 
-            <div className="flex flex-wrap gap-2.5">
-              {audioOptions.map((aud) => {
-                const isSelected = selectedAudioLang === aud.code;
-                return (
-                  <button
-                    key={aud.code}
-                    type="button"
-                    onClick={() => setSelectedAudioLang(aud.code)}
-                    className={`min-h-[40px] px-3.5 rounded-xl border text-xs font-extrabold inline-flex items-center gap-2 transition-colors ${
-                      isSelected
-                        ? 'bg-[#10B981]/15 border-[#10B981]/60 text-[#10B981]'
-                        : 'bg-[#171D27] border-white/[0.08] text-[#CBD5E1] hover:border-white/25'
-                    }`}
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>{aud.label}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                        aud.isOriginal
-                          ? 'bg-[#10B981]/20 text-[#10B981]'
-                          : 'bg-[#00E5FF]/20 text-[#00E5FF]'
+            {audioDropdownOpen && (
+              <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                {audioOptions.map((aud) => {
+                  const isSelected = selectedAudioLang === aud.code;
+                  return (
+                    <button
+                      key={aud.code}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAudioLang(aud.code);
+                        setAudioDropdownOpen(false);
+                      }}
+                      className={`min-h-[40px] px-3 rounded-lg border text-xs font-bold flex items-center justify-between gap-2 transition-colors ${
+                        isSelected
+                          ? 'bg-[#10B981]/15 border-[#10B981]/60 text-[#10B981]'
+                          : 'bg-[#171D27] border-white/[0.08] text-[#CBD5E1] hover:border-white/25'
                       }`}
                     >
-                      {aud.isOriginal ? 'Original' : 'Dubbed'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                      <span className="inline-flex items-center gap-2 min-w-0 truncate">
+                        <Volume2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{aud.label}</span>
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
+                          aud.isOriginal
+                            ? 'bg-[#10B981]/20 text-[#10B981]'
+                            : 'bg-[#00E5FF]/20 text-[#00E5FF]'
+                        }`}
+                      >
+                        {aud.isOriginal ? 'Original' : 'Dubbed'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Section 2: Select Quality (1080P, 720P, 480P, 360P) */}
-          <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="w-7 h-7 rounded-md bg-[#6EE7B7] text-[#052E16] flex items-center justify-center shrink-0">
-                  <Video className="w-4 h-4" />
-                </span>
-                <span className="text-sm font-extrabold text-[#F8FAFC]">Select Quality</span>
-                {loadingLinks && (
-                  <span className="text-xs font-semibold text-[#00E5FF] inline-flex items-center gap-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Syncing...
+          {/* Section 2: Collapsible Movie Quality Dropdown (1080P, 720P, 480P, 360P) */}
+          <div className="rounded-xl bg-[#141923] border border-white/[0.08] overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+              <button
+                type="button"
+                onClick={() => setQualityDropdownOpen((o) => !o)}
+                className="flex-1 min-h-[36px] flex items-center justify-between gap-2 text-left min-w-0"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-7 h-7 rounded-md bg-[#6EE7B7] text-[#052E16] flex items-center justify-center shrink-0">
+                    <Video className="w-4 h-4" />
                   </span>
-                )}
-              </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-extrabold text-[#F8FAFC]">Movie Quality</span>
+                      {loadingLinks && (
+                        <span className="text-[10px] font-semibold text-[#00E5FF] inline-flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Syncing
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] font-semibold text-[#FCE18E] truncate tabular-nums">
+                      {activeQualityObj
+                        ? `${activeQualityObj.label} • ${activeQualityObj.format} • ${activeQualityObj.size}`
+                        : selectedQuality}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 text-[#94A3B8] shrink-0 transition-transform ${
+                    qualityDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
               <button
                 type="button"
                 onClick={() => setDataSaver((d) => !d)}
-                className={`min-h-[42px] px-3.5 rounded-xl sm:rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 transition-colors shrink-0 ${
+                className={`min-h-[34px] px-2.5 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1 transition-colors shrink-0 ${
                   dataSaver
                     ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
                     : 'bg-[#171D27] border-white/[0.08] text-[#CBD5E1] hover:border-white/20'
                 }`}
               >
                 <Gauge className="w-3.5 h-3.5" />
-                Data Saver
+                <span className="hidden sm:inline">Data Saver</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-              {qualityOptions.map((q) => {
-                const isSelected = selectedQuality === q.label;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedQuality(q.label);
-                      if (q.label !== '360P') setDataSaver(false);
-                    }}
-                    className={`relative rounded-xl border p-3.5 text-left transition-colors ${
-                      isSelected
-                        ? 'bg-[#1B1D1A] border-[#D4A72C]/70'
-                        : 'bg-[#171D27] border-white/[0.07] hover:border-white/20'
-                    }`}
-                  >
-                    {q.recommended && (
-                      <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-[#FFB800]/20 text-[#FFB800] flex items-center justify-center">
-                        <Star className="w-3 h-3 fill-[#FFB800]" />
-                      </span>
-                    )}
-                    <div className="text-sm font-extrabold text-[#F8FAFC] tabular-nums pr-6">
-                      {q.label}
-                    </div>
-                    <div className="text-[11px] font-semibold text-[#10B981] mt-0.5 truncate">
-                      {q.audioLabel || activeAudioObj?.label || `Original (${origLanguageName})`}
-                    </div>
-                    <div className="text-[11px] text-[#94A3B8] mt-0.5 tabular-nums">
-                      {q.format} • {q.size}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            {qualityDropdownOpen && (
+              <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {qualityOptions.map((q) => {
+                  const isSelected = selectedQuality === q.label;
+                  return (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedQuality(q.label);
+                        if (q.label !== '360P') setDataSaver(false);
+                        setQualityDropdownOpen(false);
+                      }}
+                      className={`relative rounded-xl border p-3 text-left transition-colors ${
+                        isSelected
+                          ? 'bg-[#1B1D1A] border-[#D4A72C]/70'
+                          : 'bg-[#171D27] border-white/[0.07] hover:border-white/20'
+                      }`}
+                    >
+                      {q.recommended && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#FFB800]/20 text-[#FFB800] flex items-center justify-center">
+                          <Star className="w-2.5 h-2.5 fill-[#FFB800]" />
+                        </span>
+                      )}
+                      <div className="text-sm font-extrabold text-[#F8FAFC] tabular-nums pr-5">
+                        {q.label}
+                      </div>
+                      <div className="text-[10.5px] font-semibold text-[#10B981] mt-0.5 truncate">
+                        {q.audioLabel || activeAudioObj?.label || `Original (${origLanguageName})`}
+                      </div>
+                      <div className="text-[10.5px] text-[#94A3B8] mt-0.5 tabular-nums">
+                        {q.format} • {q.size}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Section 3: Select Subtitle */}
-          <div className="space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center shrink-0">
-                  <Captions className="w-4 h-4" />
-                </span>
-                <span className="text-sm font-extrabold text-[#F8FAFC]">Select Subtitle</span>
-              </div>
+          {/* Section 3: Collapsible Subtitle Dropdown */}
+          <div className="rounded-xl bg-[#141923] border border-white/[0.08] overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+              <button
+                type="button"
+                onClick={() => setSubtitleDropdownOpen((o) => !o)}
+                className="flex-1 min-h-[36px] flex items-center justify-between gap-2 text-left min-w-0"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-7 h-7 rounded-md bg-white/[0.08] text-[#E2E8F0] flex items-center justify-center shrink-0">
+                    <Captions className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-extrabold text-[#F8FAFC]">Subtitles</div>
+                    <div className="text-[11px] font-semibold text-[#00E5FF] truncate">
+                      {activeSubObj ? `${activeSubObj.label} (${activeSubObj.size})` : 'English'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 text-[#94A3B8] shrink-0 transition-transform ${
+                    subtitleDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
               {activeSubObj?.url && activeSubObj.code !== 'none' && (
                 <button
                   type="button"
                   disabled={downloadingSub}
                   onClick={(e) => handleDownloadSubtitleOnly(activeSubObj, e)}
-                  className="w-full sm:w-auto min-h-[44px] sm:min-h-[34px] px-3.5 rounded-xl sm:rounded-lg bg-[#161D27] hover:bg-[#1E2736] disabled:opacity-60 border border-[#00E5FF]/40 text-xs sm:text-[11px] font-bold text-[#00E5FF] inline-flex items-center justify-center gap-1.5 transition-colors"
+                  className="min-h-[34px] px-2.5 rounded-lg bg-[#161D27] hover:bg-[#1E2736] disabled:opacity-60 border border-[#00E5FF]/40 text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1 transition-colors shrink-0"
                 >
                   {downloadingSub ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <Download className="w-3.5 h-3.5" />
                   )}
-                  {downloadingSub ? 'Saving Subtitle...' : `Download ${activeSubObj.label} (.SRT)`}
+                  <span>{downloadingSub ? 'Saving...' : '.SRT'}</span>
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
-              {subtitleOptions.map((sub) => {
-                const isSelected = selectedSub === sub.code;
-                return (
-                  <button
-                    key={sub.code}
-                    type="button"
-                    onClick={() => setSelectedSub(sub.code)}
-                    className={`relative rounded-xl border p-3 sm:p-3.5 text-left transition-colors ${
-                      isSelected
-                        ? 'bg-[#10B981]/12 border-[#10B981]/55'
-                        : 'bg-[#161D27] border-white/[0.08] hover:border-white/25 hover:bg-[#1B2330]'
-                    }`}
-                  >
-                    {isSelected && (
-                      <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-[#10B981]/20 text-[#10B981] flex items-center justify-center">
-                        <Check className="w-3 h-3" />
-                      </span>
-                    )}
-                    <div className="text-[13px] sm:text-sm font-bold text-[#F8FAFC] pr-6 leading-snug line-clamp-2">
-                      {sub.label}
-                    </div>
-                    <div className="text-[11px] text-[#94A3B8] mt-1 tabular-nums">
-                      {sub.size}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            {subtitleDropdownOpen && (
+              <div className="px-3 pb-3 pt-2 border-t border-white/[0.06] grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+                {subtitleOptions.map((sub) => {
+                  const isSelected = selectedSub === sub.code;
+                  return (
+                    <button
+                      key={sub.code}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSub(sub.code);
+                        setSubtitleDropdownOpen(false);
+                      }}
+                      className={`relative rounded-lg border p-2.5 text-left transition-colors ${
+                        isSelected
+                          ? 'bg-[#10B981]/12 border-[#10B981]/55'
+                          : 'bg-[#161D27] border-white/[0.08] hover:border-white/25 hover:bg-[#1B2330]'
+                      }`}
+                    >
+                      {isSelected && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#10B981]/20 text-[#10B981] flex items-center justify-center">
+                          <Check className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                      <div className="text-xs font-bold text-[#F8FAFC] pr-5 leading-snug line-clamp-2">
+                        {sub.label}
+                      </div>
+                      <div className="text-[10.5px] text-[#94A3B8] mt-0.5 tabular-nums">
+                        {sub.size}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {downloadingVideo && downloadProgress && (
