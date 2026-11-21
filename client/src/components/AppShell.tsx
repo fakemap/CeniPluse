@@ -17,6 +17,7 @@ interface AppShellProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onSelectMedia: (item: MediaItem) => void;
+  watchingCount: number;
   watchlistCount: number;
   onOpenModal: (modal: 'pro' | 'app' | 'signin') => void;
   userEmail: string | null;
@@ -50,6 +51,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   searchQuery,
   onSearchChange,
   onSelectMedia,
+  watchingCount,
   watchlistCount,
   onOpenModal,
   userEmail,
@@ -84,6 +86,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         onClose={onCloseSidebar}
         uiLanguage={uiLanguage}
         onChangeLanguage={onChangeLanguage}
+        watchingCount={watchingCount}
         watchlistCount={watchlistCount}
         onOpenAppModal={() => onOpenModal('app')}
       />

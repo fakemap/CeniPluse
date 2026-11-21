@@ -5,6 +5,7 @@ export type NavRoute =
   | 'animation'
   | 'trending'
   | 'search'
+  | 'watching'
   | 'watchlist'
   | 'downloads'
   | 'admin';

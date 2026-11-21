@@ -2,6 +2,10 @@ import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'rea
 import {
   Download,
   Bookmark,
+  PlayCircle,
+  Play,
+  X,
+  LogIn,
   Trash2,
   Loader2,
   Plus,
@@ -61,6 +65,7 @@ const VALID_ROUTES = new Set<NavRoute>([
   'animation',
   'trending',
   'search',
+  'watching',
   'watchlist',
   'downloads',
   'admin',
@@ -250,28 +255,7 @@ export const App: React.FC = () => {
       : 'all'
   );
 
-  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(() => {
-    try {
-      const legacyPhantomIds = new Set([
-        'cc_tears_of_steel',
-        'cc_sintel',
-        'mov_tears_of_steel',
-        'mov_sintel',
-      ]);
-      const saved = JSON.parse(localStorage.getItem('cinepulse_watchlist') || '[]');
-      if (!Array.isArray(saved)) return new Set();
-      // Clear auto-seeded legacy phantom IDs on first upgrade so empty watchlist starts genuinely empty
-      if (!localStorage.getItem('cinepulse_watchlist_v2')) {
-        localStorage.setItem('cinepulse_watchlist_v2', '1');
-        const cleaned = saved.filter((id) => !legacyPhantomIds.has(String(id)));
-        localStorage.setItem('cinepulse_watchlist', JSON.stringify(cleaned));
-        return new Set(cleaned);
-      }
-      return new Set(saved);
-    } catch {
-      return new Set();
-    }
-  });
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(() => new Set());
 
   const [selectedMedia, setSelectedMedia] = useState<{
     item: MediaItem;
@@ -285,6 +269,12 @@ export const App: React.FC = () => {
   const [premiumPlan, setPremiumPlan] = useState<string | null>(() =>
     localStorage.getItem('cinepulse_premium_plan')
   );
+
+  const accountKey = useMemo(() => {
+    const raw = (userProfile?.email || userEmail || '').trim().toLowerCase();
+    return raw || null;
+  }, [userProfile, userEmail]);
+  const isSignedIn = Boolean(accountKey);
 
   // Sync live Supabase Auth session (Email/Password + Google OAuth + Auto Token Refresh)
   useEffect(() => {
@@ -315,48 +305,64 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const [watchProgressMap, setWatchProgressMap] = useState<Record<string, WatchProgressEntry>>(() => {
-    try {
-      const raw = localStorage.getItem('cinepulse_progress');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    } catch {
-      // fallback below
-    }
-    return {};
-  });
+  const [watchProgressMap, setWatchProgressMap] = useState<Record<string, WatchProgressEntry>>({});
 
+  // Load account-scoped Watchlist & Watching progress ONLY when signed in; clear immediately when signed out
   useEffect(() => {
+    if (!accountKey) {
+      setWatchlistIds(new Set());
+      setWatchProgressMap({});
+      return;
+    }
+
+    const watchlistKey = `cinepulse_watchlist_${accountKey}`;
+    const progressKey = `cinepulse_progress_${accountKey}`;
+
+    try {
+      const savedWatchlist = JSON.parse(localStorage.getItem(watchlistKey) || '[]');
+      setWatchlistIds(Array.isArray(savedWatchlist) ? new Set(savedWatchlist) : new Set());
+    } catch {
+      setWatchlistIds(new Set());
+    }
+
     const syncProgress = () => {
       try {
-        const raw = localStorage.getItem('cinepulse_progress');
-        if (raw) setWatchProgressMap(JSON.parse(raw));
+        const raw = localStorage.getItem(progressKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setWatchProgressMap(parsed && typeof parsed === 'object' ? parsed : {});
+        } else {
+          setWatchProgressMap({});
+        }
       } catch {
-        // ignore
+        setWatchProgressMap({});
       }
     };
+
+    syncProgress();
     window.addEventListener('cinepulse:progress', syncProgress);
     return () => window.removeEventListener('cinepulse:progress', syncProgress);
-  }, []);
+  }, [accountKey]);
 
   const recordPlayStart = (item: MediaItem) => {
+    // Only track Watching history for signed-in accounts
+    if (!accountKey) return;
+    const progressKey = `cinepulse_progress_${accountKey}`;
     setWatchProgressMap((prev) => {
       const existing = prev[item.id];
       const next: Record<string, WatchProgressEntry> = {
         ...prev,
         [item.id]: {
           mediaId: item.id,
-          positionSec: existing?.positionSec || 780,
+          positionSec: existing?.positionSec || 60,
           durationSec: existing?.durationSec || 5400,
-          seasonNumber: item.type === 'series' ? 1 : undefined,
-          episodeNumber: item.type === 'series' ? 1 : undefined,
+          seasonNumber: item.type === 'series' ? existing?.seasonNumber || 1 : undefined,
+          episodeNumber: item.type === 'series' ? existing?.episodeNumber || 1 : undefined,
           updatedAt: new Date().toISOString(),
         },
       };
       try {
-        localStorage.setItem('cinepulse_progress', JSON.stringify(next));
+        localStorage.setItem(progressKey, JSON.stringify(next));
       } catch {
         // ignore
       }
@@ -365,11 +371,13 @@ export const App: React.FC = () => {
   };
 
   const handleRemoveContinueWatching = (mediaId: string) => {
+    if (!accountKey) return;
+    const progressKey = `cinepulse_progress_${accountKey}`;
     setWatchProgressMap((prev) => {
       const next = { ...prev };
       delete next[mediaId];
       try {
-        localStorage.setItem('cinepulse_progress', JSON.stringify(next));
+        localStorage.setItem(progressKey, JSON.stringify(next));
       } catch {
         // ignore
       }
@@ -414,10 +422,18 @@ export const App: React.FC = () => {
     setSelectedMedia({ item, autoPlay: true });
   };
 
-  // Persist watchlist
+  // Persist account-scoped watchlist only when signed in
   useEffect(() => {
-    localStorage.setItem('cinepulse_watchlist', JSON.stringify(Array.from(watchlistIds)));
-  }, [watchlistIds]);
+    if (!accountKey) return;
+    try {
+      localStorage.setItem(
+        `cinepulse_watchlist_${accountKey}`,
+        JSON.stringify(Array.from(watchlistIds))
+      );
+    } catch {
+      // ignore
+    }
+  }, [watchlistIds, accountKey]);
 
   // ---- Browser history (Back / Forward) support ----
   // Every "page" (route, directory view, or opened title) gets its own history entry via pushState.
@@ -625,6 +641,10 @@ export const App: React.FC = () => {
           title: 'Search Free Movies, TV Shows, Cast & Genres — CeniPluse',
           desc: 'Search our catalog of over 1,000,000 movies, series, anime, and Nollywood hits by title, actor, or genre.',
         },
+        watching: {
+          title: 'Continue Watching — CeniPluse',
+          desc: 'Pick up right where you left off across movies and TV series saved to your CeniPluse account.',
+        },
         watchlist: {
           title: 'My Watchlist & Favorites — CeniPluse',
           desc: 'Access your saved movies, TV shows, and bookmarks on CeniPluse.',
@@ -791,8 +811,12 @@ export const App: React.FC = () => {
     });
   }, [isHydratingLive, catalog]);
 
-  // Optimistic Watchlist toggle with server sync & rollback on failure
+  // Optimistic Watchlist toggle with server sync & rollback on failure (signed-in accounts only)
   const handleToggleWatchlist = (id: string) => {
+    if (!accountKey) {
+      setActiveModal('signin');
+      return;
+    }
     let previousSnapshot: Set<string> = new Set();
     setWatchlistIds((prev) => {
       previousSnapshot = new Set(prev);
@@ -1203,6 +1227,7 @@ export const App: React.FC = () => {
   );
 
   const continueWatchingEntries = useMemo(() => {
+    if (!isSignedIn) return [];
     const playableCatalog = catalog.filter((m) => m.sources.length > 0 || hasVidLinkSupport(m));
     return Object.values(watchProgressMap)
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
@@ -1211,7 +1236,7 @@ export const App: React.FC = () => {
         return item ? { item, progress } : null;
       })
       .filter((x): x is { item: MediaItem; progress: WatchProgressEntry } => Boolean(x));
-  }, [catalog, watchProgressMap]);
+  }, [catalog, watchProgressMap, isSignedIn]);
 
   const renderPage = () => {
     if (isHydratingLive) {
@@ -1790,7 +1815,151 @@ export const App: React.FC = () => {
       );
     }
 
-    // 5. WATCHLIST VIEW (3-column mobile grid)
+    // 4B. WATCHING VIEW (Account-gated Continue Watching history)
+    if (activeRoute === 'watching') {
+      return (
+        <div className="px-4 md:px-0">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-lg md:text-xl font-extrabold text-[#F8FAFC] flex items-center gap-2">
+                <PlayCircle className="w-5 h-5 text-[#10B981]" />
+                Watching
+              </h1>
+              <p className="text-xs text-[#94A3B8] mt-0.5">
+                {isSignedIn
+                  ? `${continueWatchingEntries.length} ${continueWatchingEntries.length === 1 ? 'title' : 'titles'} in progress on your account`
+                  : 'Sign in to track what you are watching and resume anytime'}
+              </p>
+            </div>
+          </div>
+
+          {!isSignedIn ? (
+            <div className="rounded-2xl bg-[#141821] border border-white/[0.06] py-14 px-6 text-center max-w-lg mx-auto">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-[#10B981]/10 border border-[#10B981]/25 flex items-center justify-center">
+                <LogIn className="w-6 h-6 text-[#10B981]" />
+              </div>
+              <p className="text-base font-bold text-[#F8FAFC]">Sign in to track what you&apos;re watching</p>
+              <p className="text-xs text-[#94A3B8] mt-1.5 mb-5 max-w-sm mx-auto">
+                Watch history and resume progress are tied to your CeniPluse account so you can pick up right where you left off.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveModal('signin')}
+                className="min-h-[44px] px-6 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold transition-colors"
+              >
+                Sign In / Create Account
+              </button>
+            </div>
+          ) : continueWatchingEntries.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {continueWatchingEntries.map(({ item, progress }) => {
+                const pct =
+                  progress.durationSec > 0
+                    ? Math.min(96, Math.max(4, Math.round((progress.positionSec / progress.durationSec) * 100)))
+                    : 15;
+                const remainingMin = Math.max(
+                  1,
+                  Math.round(Math.max(0, progress.durationSec - progress.positionSec) / 60)
+                );
+                const epTag =
+                  item.type === 'series' && progress.seasonNumber && progress.episodeNumber
+                    ? `S${progress.seasonNumber} E${progress.episodeNumber}`
+                    : `${item.year}`;
+                return (
+                  <div
+                    key={item.id}
+                    className="group relative rounded-2xl bg-[#141821] border border-white/[0.08] hover:border-[#00E5FF]/40 overflow-hidden transition-all"
+                  >
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handlePlayItem(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handlePlayItem(item);
+                        }
+                      }}
+                      className="relative aspect-video w-full bg-[#0B0D12] cursor-pointer overflow-hidden"
+                    >
+                      <img
+                        src={item.backdrop || item.poster}
+                        alt={item.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0B0D12] via-[#0B0D12]/25 to-transparent" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="w-11 h-11 rounded-full bg-[#00E5FF]/90 text-[#071018] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                          <Play className="w-5 h-5 fill-current ml-0.5" />
+                        </span>
+                      </div>
+                      <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/75 border border-white/10 text-[10px] font-bold text-[#F8FAFC]">
+                        {epTag}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${item.title} from Watching`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveContinueWatching(item.id);
+                        }}
+                        className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/75 hover:bg-rose-500/90 text-white/80 hover:text-white flex items-center justify-center transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/15">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#00E5FF] to-[#10B981]"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="p-3 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMedia({ item, autoPlay: false })}
+                        className="min-w-0 text-left"
+                      >
+                        <p className="text-sm font-bold text-[#F8FAFC] truncate hover:text-[#00E5FF] transition-colors">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                          {pct}% watched &bull; {remainingMin}m left
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePlayItem(item)}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF] text-[#00E5FF] hover:text-[#071018] text-[11px] font-extrabold transition-colors"
+                      >
+                        Resume
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-[#141821] border border-white/[0.06] py-14 px-6 text-center">
+              <p className="text-base font-bold text-[#F8FAFC]">Nothing in progress yet</p>
+              <p className="text-xs text-[#94A3B8] mt-1 mb-4">
+                Start watching any movie or series and it will appear here so you can resume anytime.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleNavigate('home')}
+                className="min-h-[44px] px-6 rounded-full bg-[#00E5FF] text-[#071018] text-xs font-extrabold"
+              >
+                Explore Home
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 5. WATCHLIST VIEW (Account-gated 3-column mobile grid)
     if (activeRoute === 'watchlist') {
       return (
         <div>
@@ -1801,12 +1970,31 @@ export const App: React.FC = () => {
                 My List
               </h1>
               <p className="text-xs text-[#94A3B8] mt-0.5">
-                {watchlistItems.length} saved movies &amp; series
+                {isSignedIn
+                  ? `${watchlistItems.length} saved movies & series`
+                  : 'Sign in to save movies & series to watch later'}
               </p>
             </div>
           </div>
 
-          {watchlistItems.length > 0 ? (
+          {!isSignedIn ? (
+            <div className="mx-4 md:mx-auto rounded-2xl bg-[#141821] border border-white/[0.06] py-14 px-6 text-center max-w-lg">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-[#00E5FF]/10 border border-[#00E5FF]/25 flex items-center justify-center">
+                <LogIn className="w-6 h-6 text-[#00E5FF]" />
+              </div>
+              <p className="text-base font-bold text-[#F8FAFC]">Sign in to save your Watchlist</p>
+              <p className="text-xs text-[#94A3B8] mt-1.5 mb-5 max-w-sm mx-auto">
+                Your saved titles are tied to your CeniPluse account so they stay ready whenever you come back.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveModal('signin')}
+                className="min-h-[44px] px-6 rounded-full bg-[#00E5FF] hover:bg-[#33ECFF] text-[#071018] text-xs font-extrabold transition-colors"
+              >
+                Sign In / Create Account
+              </button>
+            </div>
+          ) : watchlistItems.length > 0 ? (
             <div className="grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 sm:px-4 md:px-0 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 min-[1920px]:grid-cols-9 md:gap-4">
               {watchlistItems.map((item) => (
                 <PosterCard
@@ -1814,7 +2002,7 @@ export const App: React.FC = () => {
                   item={item}
                   showCast
                   inWatchlist
-                  onPlay={(m) => setSelectedMedia({ item: m, autoPlay: true })}
+                  onPlay={(m) => handlePlayItem(m)}
                   onSelect={(m) => setSelectedMedia({ item: m, autoPlay: false })}
                   onToggleWatchlist={handleToggleWatchlist}
                 />
@@ -1941,6 +2129,7 @@ export const App: React.FC = () => {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onSelectMedia={(item) => setSelectedMedia({ item, autoPlay: false })}
+        watchingCount={continueWatchingEntries.length}
         watchlistCount={watchlistItems.length}
         onOpenModal={(m) => {
           if (m !== 'pro') setPaywallReason(null);

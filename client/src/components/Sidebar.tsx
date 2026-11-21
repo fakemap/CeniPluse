@@ -5,6 +5,7 @@ import {
   Film,
   Clapperboard,
   Flame,
+  PlayCircle,
   Bookmark,
   Download,
   Globe,
@@ -24,6 +25,7 @@ interface SidebarProps {
   onClose: () => void;
   uiLanguage: string;
   onChangeLanguage: (code: string) => void;
+  watchingCount: number;
   watchlistCount: number;
   onOpenAppModal: () => void;
 }
@@ -34,6 +36,7 @@ const NAV_ITEMS: Array<{ id: NavRoute; label: string; icon: React.ComponentType<
   { id: 'movies', label: 'Movies', icon: Film },
   { id: 'animation', label: 'Animation', icon: Clapperboard },
   { id: 'trending', label: 'Trending', icon: Flame },
+  { id: 'watching', label: 'Watching', icon: PlayCircle },
   { id: 'watchlist', label: 'Watchlist', icon: Bookmark },
   { id: 'downloads', label: 'Downloads', icon: Download },
 ];
@@ -45,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
   uiLanguage,
   onChangeLanguage,
+  watchingCount,
   watchlistCount,
   onOpenAppModal,
 }) => {
@@ -159,6 +163,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   />
                   <span className="flex-1 text-left truncate">{label}</span>
+                  {id === 'watching' && watchingCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#10B981]/15 text-[#10B981] tabular-nums">
+                      {watchingCount}
+                    </span>
+                  )}
                   {id === 'watchlist' && watchlistCount > 0 && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#00E5FF]/15 text-[#00E5FF] tabular-nums">
                       {watchlistCount}

@@ -30,6 +30,9 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const impressionSentRef = useRef(false);
   const [inView, setInView] = useState(false);
+  const defaultFrameHeight = slot === 'download' ? 50 : slot === 'home' ? 90 : 120;
+  const [frameHeight, setFrameHeight] = useState<number>(defaultFrameHeight);
+  const frameIdRef = useRef<string>(`cp_ad_${slot}_${Math.random().toString(36).slice(2, 8)}`);
 
   const isPremiumUser = Boolean(hasActiveSubscription || premiumPlan);
   const isSecondary = slot === 'player' || slot === 'download';
@@ -114,6 +117,19 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     });
   }, [shouldRender, inView, resolvedPlacement, networkLabel, slot, htmlCode, imageUrl]);
 
+  useEffect(() => {
+    if (!shouldRender || !htmlCode) return;
+    const onMessage = (e: MessageEvent) => {
+      if (!e.data || e.data.type !== 'cp-ad-resize' || e.data.id !== frameIdRef.current) return;
+      const h = Number(e.data.height);
+      if (Number.isFinite(h) && h >= 40 && h <= 300) {
+        setFrameHeight(Math.ceil(h));
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [shouldRender, htmlCode]);
+
   if (!shouldRender || !config) return null;
 
   const hasExternalLink = Boolean(linkUrl && /^https?:\/\//i.test(linkUrl));
@@ -136,8 +152,9 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     }
   };
 
-  // Mode 1: Live Third-Party Ad Network Code inside an isolated srcDoc iframe
+  // Mode 1: Live Third-Party Ad Network Code inside a borderless, tightly fitted srcDoc iframe
   if (htmlCode) {
+    const frameId = frameIdRef.current;
     const srcDoc = `<!doctype html>
 <html>
 <head>
@@ -148,84 +165,90 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     margin: 0;
     padding: 0;
     background: transparent;
+    overflow: hidden;
+    width: 100%;
+  }
+  #cp-ad-wrap {
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100%;
-    overflow: hidden;
+    line-height: 0;
   }
 </style>
 </head>
-<body>${htmlCode}</body>
+<body>
+  <div id="cp-ad-wrap">${htmlCode}</div>
+  <script>
+    (function(){
+      var id = ${JSON.stringify(frameId)};
+      function report() {
+        var el = document.getElementById('cp-ad-wrap');
+        if (!el) return;
+        var rect = el.getBoundingClientRect();
+        var h = Math.max(rect.height || 0, el.scrollHeight || 0);
+        if (h >= 40) {
+          try { window.parent.postMessage({ type: 'cp-ad-resize', id: id, height: h }, '*'); } catch (e) {}
+        }
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        try { new ResizeObserver(report).observe(document.getElementById('cp-ad-wrap')); } catch (e) {}
+      }
+      window.addEventListener('load', report);
+      setTimeout(report, 600);
+      setTimeout(report, 1800);
+    })();
+  </script>
+</body>
 </html>`;
+
+    const maxWidthClass =
+      slot === 'download'
+        ? 'max-w-[320px]'
+        : slot === 'home'
+        ? 'max-w-[728px]'
+        : 'max-w-full';
 
     return (
       <div
         ref={containerRef}
         className={`${
-          slot === 'download' ? 'my-1' : 'mx-4 md:mx-0 my-5'
-        } rounded-2xl bg-[#10141D] border border-white/[0.08] p-2.5 flex flex-col items-center gap-1.5 overflow-hidden`}
+          slot === 'download' ? 'my-1' : 'my-3'
+        } w-full flex items-center justify-center bg-transparent overflow-hidden`}
       >
-        <div className="w-full flex items-center justify-between px-1.5">
-          <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-[#64748B]">
-            Sponsored &bull; {networkLabel}
-          </span>
-          <button
-            type="button"
-            onClick={onOpenPremium}
-            className="text-[10px] font-bold text-[#FCE18E]/80 hover:text-[#FCE18E] inline-flex items-center gap-1 transition-colors"
-          >
-            <Crown className="w-3 h-3" />
-            Remove Ads
-          </button>
-        </div>
         <iframe
           title={`Advertisement ${slot}`}
           srcDoc={srcDoc}
           sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-forms allow-top-navigation-by-user-activation"
           loading="lazy"
           scrolling="no"
-          className={`w-full border-0 rounded-xl bg-transparent ${
-            slot === 'download' ? 'h-[95px]' : 'h-[100px] sm:h-[115px]'
-          }`}
+          style={{ height: `${frameHeight}px` }}
+          className={`w-full ${maxWidthClass} border-0 bg-transparent block`}
         />
       </div>
     );
   }
 
-  // Mode 2: Direct Sponsor Banner Image
+  // Mode 2: Direct Sponsor Banner Image (borderless & tightly fitted)
   if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
     return (
       <div
         ref={containerRef}
         className={`${
-          slot === 'download' ? 'my-1' : 'mx-4 md:mx-0 my-5'
-        } rounded-2xl bg-[#10141D] border border-white/[0.08] overflow-hidden shadow-lg`}
+          slot === 'download' ? 'my-1' : 'my-3'
+        } w-full flex items-center justify-center bg-transparent overflow-hidden`}
       >
-        <div className="px-3 py-1.5 flex items-center justify-between border-b border-white/[0.05]">
-          <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-[#94A3B8]">
-            Ad &bull; {networkLabel}
-          </span>
-          <button
-            type="button"
-            onClick={onOpenPremium}
-            className="text-[10px] font-bold text-[#FCE18E]/80 hover:text-[#FCE18E] inline-flex items-center gap-1 transition-colors"
-          >
-            <Crown className="w-3 h-3" />
-            Go Ad-Free
-          </button>
-        </div>
         <button
           type="button"
           onClick={handleTrackAndOpen}
-          className="block w-full focus:outline-none group"
+          className="block focus:outline-none group"
         >
           <img
             src={imageUrl}
             alt={config.bannerTitle || 'Sponsored Banner'}
             loading="lazy"
-            className={`w-full object-cover group-hover:brightness-105 transition-all ${
-              slot === 'download' ? 'max-h-[90px]' : 'max-h-[120px] sm:max-h-[140px]'
+            className={`max-w-full rounded-lg object-contain group-hover:brightness-105 transition-all ${
+              slot === 'download' ? 'max-h-[60px]' : 'max-h-[110px] sm:max-h-[130px]'
             }`}
           />
         </button>

@@ -684,11 +684,14 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       }
     }, 6000);
 
-    const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
-    const savedSec = Number(localStorage.getItem(progressKey) || 0);
+    const accountScope = userEmail ? userEmail.trim().toLowerCase() : null;
+    const progressKey = accountScope
+      ? `cinepulse_prog_${accountScope}_${enriched.id}_${activeEpisodeLabel || 'main'}`
+      : null;
+    const savedSec = progressKey ? Number(localStorage.getItem(progressKey) || 0) : 0;
 
     const applyResumeAndPlay = () => {
-      if (savedSec > 5 && isFinite(video.duration) && savedSec < video.duration - 10) {
+      if (accountScope && savedSec > 5 && isFinite(video.duration) && savedSec < video.duration - 10) {
         video.currentTime = savedSec;
       }
       video.play().catch(() => {});
@@ -723,11 +726,28 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
       if (bufferTimer) clearTimeout(bufferTimer);
       setIsBufferingLong(false);
 
+      if (!accountScope || !progressKey) return;
       if (!isFinite(video.duration) || video.currentTime < 3) return;
       const now = Date.now();
       if (now - lastProgressSentRef.current < 5000) return;
       lastProgressSentRef.current = now;
       localStorage.setItem(progressKey, String(Math.floor(video.currentTime)));
+      try {
+        const mapKey = `cinepulse_progress_${accountScope}`;
+        const existingMap = JSON.parse(localStorage.getItem(mapKey) || '{}') || {};
+        existingMap[enriched.id] = {
+          mediaId: enriched.id,
+          positionSec: Math.floor(video.currentTime),
+          durationSec: Math.floor(video.duration),
+          seasonNumber: enriched.type === 'series' ? selectedSeasonNum : undefined,
+          episodeNumber: enriched.type === 'series' ? selectedEpNum : undefined,
+          updatedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(mapKey, JSON.stringify(existingMap));
+        window.dispatchEvent(new Event('cinepulse:progress'));
+      } catch {
+        // ignore storage quota errors
+      }
       backendApi.saveWatchProgress({
         movieId: enriched.id,
         episodeId: activeEpisodeLabel || null,
@@ -879,14 +899,16 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
 
   const savedStartAtSec = useMemo(() => {
+    const accountScope = userEmail ? userEmail.trim().toLowerCase() : null;
+    if (!accountScope) return undefined;
     try {
-      const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
+      const progressKey = `cinepulse_prog_${accountScope}_${enriched.id}_${activeEpisodeLabel || 'main'}`;
       const sec = Number(localStorage.getItem(progressKey) || 0);
       return sec > 10 ? Math.floor(sec) : undefined;
     } catch {
       return undefined;
     }
-  }, [enriched.id, activeEpisodeLabel]);
+  }, [enriched.id, activeEpisodeLabel, userEmail]);
 
   const activeEmbedUrl = useMemo(() => {
     return resolveMultiEmbedUrl({
@@ -926,11 +948,12 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
   const vidlinkEmbedUrl = activeEmbedUrl;
 
-  // Record initial progress & listen for VidLink MEDIA_DATA postMessages when streaming via VidLink embed
+  // Record initial progress & listen for VidLink MEDIA_DATA postMessages when streaming via VidLink embed (signed-in accounts only)
   useEffect(() => {
-    if (mode !== 'embed' || !vidlinkEmbedUrl) return;
+    const accountScope = userEmail ? userEmail.trim().toLowerCase() : null;
+    if (mode !== 'embed' || !vidlinkEmbedUrl || !accountScope) return;
 
-    const progressKey = `cinepulse_prog_${enriched.id}_${activeEpisodeLabel || 'main'}`;
+    const progressKey = `cinepulse_prog_${accountScope}_${enriched.id}_${activeEpisodeLabel || 'main'}`;
     const existingSec = Number(localStorage.getItem(progressKey) || 0);
     backendApi.saveWatchProgress({
       movieId: enriched.id,
@@ -954,6 +977,22 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             if (now - lastProgressSentRef.current < 5000) return;
             lastProgressSentRef.current = now;
             localStorage.setItem(progressKey, String(Math.floor(currentTime)));
+            try {
+              const mapKey = `cinepulse_progress_${accountScope}`;
+              const existingMap = JSON.parse(localStorage.getItem(mapKey) || '{}') || {};
+              existingMap[enriched.id] = {
+                mediaId: enriched.id,
+                positionSec: Math.floor(currentTime),
+                durationSec: typeof duration === 'number' && duration > 0 ? Math.floor(duration) : 5400,
+                seasonNumber: enriched.type === 'series' ? selectedSeasonNum : undefined,
+                episodeNumber: enriched.type === 'series' ? selectedEpNum : undefined,
+                updatedAt: new Date().toISOString(),
+              };
+              localStorage.setItem(mapKey, JSON.stringify(existingMap));
+              window.dispatchEvent(new Event('cinepulse:progress'));
+            } catch {
+              // ignore
+            }
             backendApi.saveWatchProgress({
               movieId: enriched.id,
               episodeId: activeEpisodeLabel || null,
@@ -964,7 +1003,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
             });
           }
         } else if (data.type === 'MEDIA_DATA' && data.data) {
-          localStorage.setItem('vidLinkProgress', JSON.stringify(data.data));
+          localStorage.setItem(`vidLinkProgress_${accountScope}`, JSON.stringify(data.data));
         }
       } catch {
         // ignore malformed postMessage
@@ -973,7 +1012,7 @@ export const MediaDetailView: React.FC<MediaDetailViewProps> = ({
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [mode, vidlinkEmbedUrl, enriched.id, enriched.title, enriched.backdrop, enriched.poster, activeEpisodeLabel]);
+  }, [mode, vidlinkEmbedUrl, enriched.id, enriched.title, enriched.backdrop, enriched.poster, enriched.type, activeEpisodeLabel, userEmail, selectedSeasonNum, selectedEpNum]);
 
   const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
